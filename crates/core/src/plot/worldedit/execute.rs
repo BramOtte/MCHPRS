@@ -3,6 +3,7 @@ use crate::blocks::{Block, FlipDirection, RotateAmt};
 use crate::chat::{ChatComponentBuilder, ColorCode};
 use crate::config::CONFIG;
 use crate::player::PacketSender;
+use crate::plot::CHUNK_HEIGHT;
 use crate::utils::HyphenatedUUID;
 use mchprs_blocks::block_entities::InventoryEntry;
 use mchprs_blocks::items::{Item, ItemStack};
@@ -877,7 +878,7 @@ pub(super) fn execute_ascend(ctx: CommandExecuteContext<'_>) {
     let player_pos = player.pos.block_pos();
     let mut player_y = player_pos.y;
 
-    for (y, _) in (player_y..=256).enumerate() {
+    for (y, _) in (player_y..=CHUNK_HEIGHT).enumerate() {
         if levels == 0 {
             break;
         }

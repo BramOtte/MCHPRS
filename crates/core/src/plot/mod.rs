@@ -41,6 +41,7 @@ use self::scoreboard::Scoreboard;
 
 /// The width of a plot (2^n)
 pub const PLOT_SCALE: u32 = 4;
+pub const CHUNK_HEIGHT: i32 = 256 * 2;
 
 /// The width of a plot counted in chunks
 pub const PLOT_WIDTH: i32 = 2i32.pow(PLOT_SCALE);
@@ -139,7 +140,7 @@ impl World for PlotWorld {
         };
 
         // Check to see if block is within height limit
-        if pos.y >= 256 || pos.y < 0 {
+        if pos.y >= CHUNK_HEIGHT || pos.y < 0 {
             return false;
         }
 

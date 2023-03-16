@@ -12,6 +12,8 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::mem;
 
+use crate::plot::CHUNK_HEIGHT;
+
 #[derive(Clone)]
 pub struct BitBuffer {
     bits_per_entry: u64,
@@ -402,8 +404,11 @@ impl Default for ChunkSection {
     }
 }
 
+const CHUNK_WIDTH: usize = 16;
+pub const CHUNK_SECTION_COUNT: usize = (CHUNK_HEIGHT / 16) as usize;
+
 pub struct Chunk {
-    pub sections: [ChunkSection; 16],
+    pub sections: [ChunkSection; CHUNK_SECTION_COUNT],
     pub x: i32,
     pub z: i32,
     pub block_entities: HashMap<BlockPos, BlockEntity>,
@@ -411,11 +416,11 @@ pub struct Chunk {
 
 impl Chunk {
     pub fn encode_packet(&self) -> PacketEncoder {
-        let mut heightmap_buffer = BitBuffer::create(9, 256);
-        for x in 0..16 {
-            for z in 0..16 {
+        let mut heightmap_buffer = BitBuffer::create(9, CHUNK_WIDTH*CHUNK_WIDTH);
+        for x in 0..CHUNK_WIDTH {
+            for z in 0..CHUNK_WIDTH {
                 heightmap_buffer
-                    .set_entry((x * 16) + z, self.get_top_most_block(x as u32, z as u32));
+                    .set_entry((x * CHUNK_WIDTH) + z, self.get_top_most_block(x as u32, z as u32));
             }
         }
 

@@ -1,7 +1,7 @@
 use crate::blocks::Block;
 use crate::config::CONFIG;
 use crate::player::Player;
-use crate::plot::PlotWorld;
+use crate::plot::{PlotWorld, CHUNK_HEIGHT};
 use crate::world::World;
 use mchprs_blocks::items::ItemStack;
 use mchprs_blocks::{BlockFace, BlockPos};
@@ -51,7 +51,7 @@ pub fn use_item_on_block(
         return false;
     }
 
-    if can_place && (0..256).contains(&block_pos.y) {
+    if can_place && (0..CHUNK_HEIGHT).contains(&block_pos.y) {
         let block = Block::get_state_for_placement(world, block_pos, item.item_type, &ctx);
 
         match block {

@@ -64,7 +64,7 @@ pub struct ChunkSectionData {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChunkData {
-    pub sections: [Option<ChunkSectionData>; 16],
+    pub sections: [Option<ChunkSectionData>; 32], 
     pub block_entities: HashMap<BlockPos, BlockEntity>,
 }
 

@@ -126,7 +126,7 @@ impl PlotWorld {
     pub fn get_corners(&self) -> (BlockPos, BlockPos) {
         const W: i32 = PLOT_BLOCK_WIDTH;
         let first_pos = BlockPos::new(self.x * W, 0, self.z * W);
-        let second_pos = BlockPos::new((self.x + 1) * W - 1, 255, (self.z + 1) * W - 1);
+        let second_pos = BlockPos::new((self.x + 1) * W - 1, CHUNK_HEIGHT-1, (self.z + 1) * W - 1);
         (first_pos, second_pos)
     }
 }

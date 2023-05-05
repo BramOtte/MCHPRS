@@ -243,7 +243,7 @@ impl Plot {
     fn tick(&mut self) {
         self.timings.tick();
         if self.redpiler.is_active() {
-            self.redpiler.tick(&mut self.world);
+            self.redpiler.tick();
             return;
         }
 
@@ -318,7 +318,7 @@ impl Plot {
     fn set_pressure_plate(&mut self, pos: BlockPos, powered: bool) {
         if self.redpiler.is_active() {
             self.redpiler
-                .set_pressure_plate(&mut self.world, pos, powered);
+                .set_pressure_plate(pos, powered);
             return;
         }
 
@@ -529,7 +529,9 @@ impl Plot {
             .set_redpiler_state(&self.players, RedpilerState::Compiling);
         self.scoreboard
             .set_redpiler_options(&self.players, &options);
-        self.redpiler.compile(&mut self.world, options, ticks);
+        let bounds = self.world.get_corners();
+        self.redpiler
+            .compile(&mut self.world, bounds, options, ticks);
         self.scoreboard
             .set_redpiler_state(&self.players, RedpilerState::Running);
 
@@ -540,7 +542,8 @@ impl Plot {
     fn reset_redpiler(&mut self) {
         if self.redpiler.is_active() {
             debug!("Discarding redpiler");
-            self.redpiler.reset(&mut self.world);
+            let bounds = self.world.get_corners();
+            self.redpiler.reset(&mut self.world, bounds);
             self.scoreboard
                 .set_redpiler_state(&self.players, RedpilerState::Stopped);
             self.scoreboard

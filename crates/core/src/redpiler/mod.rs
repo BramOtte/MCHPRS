@@ -4,14 +4,15 @@ mod compile_graph;
 mod passes;
 
 use crate::blocks::Block;
-use crate::plot::PlotWorld;
+use crate::redpiler::passes::make_default_pass_manager;
 use crate::world::World;
 use backend::JITBackend;
 use mchprs_blocks::BlockPos;
 use mchprs_world::TickEntry;
-use passes::DEFAULT_PASS_MANAGER;
 use std::time::Instant;
 use tracing::{debug, error, trace, warn};
+
+use self::backend::BackendDispatcher;
 
 fn bool_to_ss(b: bool) -> u8 {
     match b {
@@ -62,7 +63,7 @@ impl CompilerOptions {
 #[derive(Default)]
 pub struct Compiler {
     is_active: bool,
-    jit: Option<Box<dyn JITBackend>>,
+    jit: Option<BackendDispatcher>,
     options: CompilerOptions,
 }
 
@@ -80,13 +81,14 @@ impl Compiler {
 
     /// Use just-in-time compilation with a `JITBackend` such as `CraneliftBackend` or `LLVMBackend`.
     /// Requires recompilation to take effect.
-    pub fn use_jit(&mut self, jit: Box<dyn JITBackend>) {
+    pub fn use_jit(&mut self, jit: BackendDispatcher) {
         self.jit = Some(jit);
     }
 
-    pub fn compile(
+    pub fn compile<W: World>(
         &mut self,
-        plot: &mut PlotWorld,
+        world: &mut W,
+        bounds: (BlockPos, BlockPos),
         options: CompilerOptions,
         ticks: Vec<TickEntry>,
     ) {
@@ -95,14 +97,13 @@ impl Compiler {
 
         self.is_active = true;
 
-        let input = CompilerInput { plot };
-        let graph = DEFAULT_PASS_MANAGER.run_passes(&options, input);
+        let input = CompilerInput { world, bounds };
+        let pass_manager = make_default_pass_manager::<W>();
+        let graph = pass_manager.run_passes(&options, &input);
 
         // TODO: Remove this once there is proper backend switching
         if self.jit.is_none() {
-            let jit: Box<backend::direct::DirectBackend> = Default::default();
-            // let jit: Box<codegen::cranelift::CraneliftBackend> = Default::default();
-            self.use_jit(jit);
+            self.use_jit(Default::default());
         }
 
         if let Some(jit) = &mut self.jit {
@@ -118,25 +119,25 @@ impl Compiler {
         debug!("Compile completed in {:?}", start.elapsed());
     }
 
-    pub fn reset(&mut self, plot: &mut PlotWorld) {
+    pub fn reset<W: World>(&mut self, world: &mut W, bounds: (BlockPos, BlockPos)) {
         if self.is_active {
             self.is_active = false;
             if let Some(jit) = &mut self.jit {
-                jit.reset(plot, self.options.io_only)
+                jit.reset(world, self.options.io_only)
             }
         }
 
         if self.options.optimize {
-            let (first_pos, second_pos) = plot.get_corners();
+            let (first_pos, second_pos) = bounds;
             let start_pos = first_pos.min(second_pos);
             let end_pos = first_pos.max(second_pos);
             for y in start_pos.y..=end_pos.y {
                 for z in start_pos.z..=end_pos.z {
                     for x in start_pos.x..=end_pos.x {
                         let pos = BlockPos::new(x, y, z);
-                        let block = plot.get_block(pos);
+                        let block = world.get_block(pos);
                         if matches!(block, Block::RedstoneWire { .. }) {
-                            block.update(plot, pos);
+                            block.update(world, pos);
                         }
                     }
                 }
@@ -145,7 +146,7 @@ impl Compiler {
         self.options = Default::default();
     }
 
-    fn backend(&mut self) -> &mut Box<dyn JITBackend> {
+    fn backend(&mut self) -> &mut BackendDispatcher {
         assert!(
             self.is_active,
             "tried to get redpiler backend when inactive"
@@ -157,21 +158,21 @@ impl Compiler {
         }
     }
 
-    pub fn tick(&mut self, plot: &mut PlotWorld) {
-        self.backend().tick(plot);
+    pub fn tick(&mut self) {
+        self.backend().tick();
     }
 
-    pub fn on_use_block(&mut self, plot: &mut PlotWorld, pos: BlockPos) {
-        self.backend().on_use_block(plot, pos);
+    pub fn on_use_block(&mut self, pos: BlockPos) {
+        self.backend().on_use_block(pos);
     }
 
-    pub fn set_pressure_plate(&mut self, plot: &mut PlotWorld, pos: BlockPos, powered: bool) {
-        self.backend().set_pressure_plate(plot, pos, powered);
+    pub fn set_pressure_plate(&mut self, pos: BlockPos, powered: bool) {
+        self.backend().set_pressure_plate(pos, powered);
     }
 
-    pub fn flush(&mut self, plot: &mut PlotWorld) {
+    pub fn flush<W: World>(&mut self, world: &mut W) {
         let io_only = self.options.io_only;
-        self.backend().flush(plot, io_only);
+        self.backend().flush(world, io_only);
     }
 
     pub fn inspect(&mut self, pos: BlockPos) {
@@ -183,6 +184,7 @@ impl Compiler {
     }
 }
 
-pub struct CompilerInput<'w> {
-    pub plot: &'w PlotWorld,
+pub struct CompilerInput<'w, W: World> {
+    pub world: &'w W,
+    pub bounds: (BlockPos, BlockPos),
 }

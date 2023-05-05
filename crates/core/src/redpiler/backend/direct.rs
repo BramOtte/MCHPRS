@@ -2,7 +2,6 @@
 
 use super::JITBackend;
 use crate::blocks::{Block, ComparatorMode};
-use crate::plot::PlotWorld;
 use crate::redpiler::compile_graph::{CompileGraph, LinkType, NodeIdx};
 use crate::redpiler::{block_powered_mut, bool_to_ss};
 use crate::world::World;
@@ -13,7 +12,7 @@ use nodes::{NodeId, Nodes};
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
 use smallvec::SmallVec;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::{fmt, mem};
 use tracing::{debug, trace, warn};
 
@@ -250,7 +249,7 @@ struct TickScheduler {
 impl TickScheduler {
     const NUM_PRIORITIES: usize = 4;
 
-    fn reset(&mut self, plot: &mut PlotWorld, blocks: &[Option<(BlockPos, Block)>]) {
+    fn reset<W: World>(&mut self, world: &mut W, blocks: &[Option<(BlockPos, Block)>]) {
         for (delay, queues) in self.queues_deque.iter().enumerate() {
             for (entries, priority) in queues.0.iter().zip(Self::priorities()) {
                 for node in entries {
@@ -258,7 +257,7 @@ impl TickScheduler {
                         warn!("Cannot schedule tick for node {:?} because block information is missing", node);
                         continue;
                     };
-                    plot.schedule_tick(pos, delay as u32 + 1, priority);
+                    world.schedule_tick(pos, delay as u32 + 1, priority);
                 }
             }
         }
@@ -327,7 +326,6 @@ impl DirectBackend {
             let update = self.nodes[node_id].updates[i];
             update_node(&mut self.scheduler, &mut self.nodes, update);
         }
-        update_node(&mut self.scheduler, &mut self.nodes, node_id);
     }
 }
 
@@ -341,8 +339,8 @@ impl JITBackend for DirectBackend {
         debug!("Node {:?}: {:#?}", node_id, self.nodes[*node_id]);
     }
 
-    fn reset(&mut self, plot: &mut PlotWorld, io_only: bool) {
-        self.scheduler.reset(plot, &self.blocks);
+    fn reset<W: World>(&mut self, world: &mut W, io_only: bool) {
+        self.scheduler.reset(world, &self.blocks);
 
         let nodes = std::mem::take(&mut self.nodes);
 
@@ -354,25 +352,27 @@ impl JITBackend for DirectBackend {
                 let block_entity = BlockEntity::Comparator {
                     output_strength: node.output_power,
                 };
-                plot.set_block_entity(pos, block_entity);
+                world.set_block_entity(pos, block_entity);
             }
 
             if io_only && !node.ty.is_io_block() {
-                plot.set_block(pos, block);
+                world.set_block(pos, block);
             }
         }
 
         self.pos_map.clear();
     }
 
-    fn on_use_block(&mut self, _plot: &mut PlotWorld, pos: BlockPos) {
+    fn on_use_block(&mut self, pos: BlockPos) {
         let node_id = self.pos_map[&pos];
         let node = &self.nodes[node_id];
         match node.ty {
             NodeType::Button => {
-                let powered = !node.powered;
+                if node.powered {
+                    return;
+                }
                 self.schedule_tick(node_id, 10, TickPriority::Normal);
-                self.set_node(node_id, powered, bool_to_ss(powered));
+                self.set_node(node_id, true, 15);
             }
             NodeType::Lever => {
                 self.set_node(node_id, !node.powered, bool_to_ss(!node.powered));
@@ -381,7 +381,7 @@ impl JITBackend for DirectBackend {
         }
     }
 
-    fn set_pressure_plate(&mut self, _plot: &mut PlotWorld, pos: BlockPos, powered: bool) {
+    fn set_pressure_plate(&mut self, pos: BlockPos, powered: bool) {
         let node_id = self.pos_map[&pos];
         let node = &self.nodes[node_id];
         match node.ty {
@@ -392,7 +392,7 @@ impl JITBackend for DirectBackend {
         }
     }
 
-    fn tick(&mut self, _plot: &mut PlotWorld) {
+    fn tick(&mut self) {
         let mut queues = self.scheduler.queues_this_tick();
 
         for node_id in queues.drain_iter() {
@@ -400,7 +400,7 @@ impl JITBackend for DirectBackend {
             let node = &self.nodes[node_id];
 
             match node.ty {
-                NodeType::Repeater(_) => {
+                NodeType::Repeater(delay) => {
                     if node.locked {
                         continue;
                     }
@@ -410,14 +410,22 @@ impl JITBackend for DirectBackend {
                         self.set_node(node_id, false, 0);
                     } else if !node.powered {
                         self.set_node(node_id, true, 15);
+                        if !should_be_powered {
+                            let node = &mut self.nodes[node_id];
+                            schedule_tick(&mut self.scheduler, node_id, node, delay as usize, TickPriority::Higher);
+                        }
                     }
                 }
-                NodeType::SimpleRepeater(_delay) => {
+                NodeType::SimpleRepeater(delay) => {
                     let should_be_powered = get_bool_input(node, &self.nodes);
                     if node.powered && !should_be_powered {
                         self.set_node(node_id, false, 0);
                     } else if !node.powered {
                         self.set_node(node_id, true, 15);
+                        if !should_be_powered {
+                            let node = &mut self.nodes[node_id];
+                            schedule_tick(&mut self.scheduler, node_id, node, delay as usize, TickPriority::Higher);
+                        }
                     }
                 }
                 NodeType::Torch => {
@@ -500,7 +508,7 @@ impl JITBackend for DirectBackend {
         // println!("{}", self);
     }
 
-    fn flush(&mut self, plot: &mut PlotWorld, io_only: bool) {
+    fn flush<W: World>(&mut self, world: &mut W, io_only: bool) {
         for (i, node) in self.nodes.inner_mut().iter_mut().enumerate() {
             let Some((pos, block)) = &mut self.blocks[i] else {
                 continue;
@@ -515,7 +523,7 @@ impl JITBackend for DirectBackend {
                 if let Block::RedstoneRepeater { repeater } = block {
                     repeater.locked = node.locked;
                 }
-                plot.set_block(*pos, *block);
+                world.set_block(*pos, *block);
             }
             node.changed = false;
         }

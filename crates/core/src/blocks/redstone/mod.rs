@@ -288,8 +288,9 @@ impl RedstoneRepeater {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
 pub enum ComparatorMode {
+    #[default]
     Compare,
     Subtract,
 }
@@ -339,12 +340,6 @@ impl ToString for ComparatorMode {
     }
 }
 
-impl Default for ComparatorMode {
-    fn default() -> Self {
-        ComparatorMode::Compare
-    }
-}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, BlockProperty, BlockTransform)]
 pub struct RedstoneComparator {
     pub facing: BlockDirection,
@@ -372,6 +367,8 @@ impl RedstoneComparator {
             side_block.get_weak_power(world, side_pos, side.block_face(), false)
         } else if let Block::RedstoneWire { wire } = side_block {
             wire.power
+        } else if let Block::RedstoneBlock {} = side_block {
+            15
         } else {
             0
         }
@@ -502,9 +499,10 @@ impl RedstoneComparator {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
 pub enum LeverFace {
     Floor,
+    #[default]
     Wall,
     Ceiling,
 }
@@ -551,12 +549,6 @@ impl ToString for LeverFace {
     }
 }
 
-impl Default for LeverFace {
-    fn default() -> Self {
-        LeverFace::Wall
-    }
-}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, BlockProperty, BlockTransform)]
 pub struct Lever {
     pub face: LeverFace,
@@ -574,9 +566,10 @@ impl Lever {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
 pub enum ButtonFace {
     Floor,
+    #[default]
     Wall,
     Ceiling,
 }
@@ -620,12 +613,6 @@ impl ToString for ButtonFace {
             ButtonFace::Ceiling => "ceiling".to_owned(),
             ButtonFace::Wall => "wall".to_owned(),
         }
-    }
-}
-
-impl Default for ButtonFace {
-    fn default() -> Self {
-        ButtonFace::Wall
     }
 }
 

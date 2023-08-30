@@ -4,13 +4,15 @@
 //! This pass is *mandatory*. Without it, there would be no links between nodes.
 
 use super::Pass;
-use crate::blocks::{Block, ButtonFace, LeverFace};
 use crate::redpiler::compile_graph::{CompileGraph, CompileLink, LinkType, NodeIdx};
 use crate::redpiler::{CompilerInput, CompilerOptions};
+use crate::redstone::{self, wire};
 use crate::world::World;
+use mchprs_blocks::blocks::{Block, ButtonFace, LeverFace};
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use petgraph::visit::NodeIndexable;
-use std::collections::{HashMap, VecDeque};
+use rustc_hash::FxHashMap;
+use std::collections::VecDeque;
 
 pub struct InputSearch;
 
@@ -34,12 +36,12 @@ impl<W: World> Pass<W> for InputSearch {
 struct InputSearchState<'a, W: World> {
     world: &'a W,
     graph: &'a mut CompileGraph,
-    pos_map: HashMap<BlockPos, NodeIdx>,
+    pos_map: FxHashMap<BlockPos, NodeIdx>,
 }
 
 impl<'a, W: World> InputSearchState<'a, W> {
     fn new(world: &'a W, graph: &'a mut CompileGraph) -> InputSearchState<'a, W> {
-        let mut pos_map = HashMap::new();
+        let mut pos_map = FxHashMap::default();
         for id in graph.node_indices() {
             let (pos, _) = graph[id].block.unwrap();
             pos_map.insert(pos, id);
@@ -127,10 +129,11 @@ impl<'a, W: World> InputSearchState<'a, W> {
                         _ => {
                             let direction = side.to_direction();
                             if search_wire
-                                && !wire
-                                    .get_regulated_sides(self.world, pos)
-                                    .get_current_side(direction.opposite())
-                                    .is_none()
+                                && !wire::get_current_side(
+                                    wire::get_regulated_sides(wire, self.world, pos),
+                                    direction.opposite(),
+                                )
+                                .is_none()
                             {
                                 self.search_wire(start_node, pos, link_ty, distance);
                             }
@@ -151,10 +154,11 @@ impl<'a, W: World> InputSearchState<'a, W> {
                 _ => {
                     let direction = side.to_direction();
                     if search_wire
-                        && !wire
-                            .get_regulated_sides(self.world, pos)
-                            .get_current_side(direction.opposite())
-                            .is_none()
+                        && !wire::get_current_side(
+                            wire::get_regulated_sides(wire, self.world, pos),
+                            direction.opposite(),
+                        )
+                        .is_none()
                     {
                         self.search_wire(start_node, pos, link_ty, distance);
                     }
@@ -171,7 +175,7 @@ impl<'a, W: World> InputSearchState<'a, W> {
         mut distance: u8,
     ) {
         let mut queue: VecDeque<BlockPos> = VecDeque::new();
-        let mut discovered = HashMap::new();
+        let mut discovered = FxHashMap::default();
 
         discovered.insert(root_pos, distance);
         queue.push_back(root_pos);
@@ -244,7 +248,8 @@ impl<'a, W: World> InputSearchState<'a, W> {
     fn search_repeater_side(&mut self, id: NodeIdx, pos: BlockPos, side: BlockDirection) {
         let side_pos = pos.offset(side.block_face());
         let side_block = self.world.get_block(side_pos);
-        if side_block.is_diode() && self.provides_weak_power(side_block, side.block_face()) {
+        if redstone::is_diode(side_block) && self.provides_weak_power(side_block, side.block_face())
+        {
             self.graph
                 .add_edge(self.pos_map[&side_pos], id, CompileLink::side(0));
         }
@@ -253,7 +258,8 @@ impl<'a, W: World> InputSearchState<'a, W> {
     fn search_comparator_side(&mut self, id: NodeIdx, pos: BlockPos, side: BlockDirection) {
         let side_pos = pos.offset(side.block_face());
         let side_block = self.world.get_block(side_pos);
-        if (side_block.is_diode() && self.provides_weak_power(side_block, side.block_face()))
+        if (redstone::is_diode(side_block)
+            && self.provides_weak_power(side_block, side.block_face()))
             || matches!(side_block, Block::RedstoneBlock { .. })
         {
             self.graph
@@ -299,7 +305,7 @@ impl<'a, W: World> InputSearchState<'a, W> {
 
                 let input_pos = pos.offset(facing.block_face());
                 let input_block = self.world.get_block(input_pos);
-                if input_block.has_comparator_override() {
+                if redstone::has_comparator_override(input_block) {
                     self.graph
                         .add_edge(self.pos_map[&input_pos], id, CompileLink::default(0));
                 } else {
@@ -307,9 +313,13 @@ impl<'a, W: World> InputSearchState<'a, W> {
 
                     let far_input_pos = input_pos.offset(facing.block_face());
                     let far_input_block = self.world.get_block(far_input_pos);
-                    if input_block.is_solid() && far_input_block.has_comparator_override() {
-                        let far_override =
-                            far_input_block.get_comparator_override(self.world, far_input_pos);
+                    if input_block.is_solid() && redstone::has_comparator_override(far_input_block)
+                    {
+                        let far_override = redstone::get_comparator_override(
+                            far_input_block,
+                            self.world,
+                            far_input_pos,
+                        );
                         self.graph[id].comparator_far_input = Some(far_override);
                     }
                 }

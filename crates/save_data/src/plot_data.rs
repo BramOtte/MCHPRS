@@ -5,8 +5,9 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::BlockPos;
 use mchprs_world::TickEntry;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use serde_big_array::BigArray;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -63,9 +64,10 @@ pub struct ChunkSectionData {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ChunkData {
-    pub sections: [Option<ChunkSectionData>; 16],
-    pub block_entities: HashMap<BlockPos, BlockEntity>,
+pub struct ChunkData<const NUM_SECTIONS: usize> {
+    #[serde(with = "BigArray")]
+    pub sections: [Option<ChunkSectionData>; NUM_SECTIONS],
+    pub block_entities: FxHashMap<BlockPos, BlockEntity>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,14 +86,16 @@ impl fmt::Display for Tps {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PlotData {
+pub struct PlotData<const NUM_CHUNK_SECTIONS: usize> {
     pub tps: Tps,
-    pub chunk_data: Vec<ChunkData>,
+    pub chunk_data: Vec<ChunkData<NUM_CHUNK_SECTIONS>>,
     pub pending_ticks: Vec<TickEntry>,
 }
 
-impl PlotData {
-    pub fn load_from_file(path: impl AsRef<Path>) -> Result<PlotData, PlotLoadError> {
+impl<const NUM_CHUNK_SECTIONS: usize> PlotData<NUM_CHUNK_SECTIONS> {
+    pub fn load_from_file(
+        path: impl AsRef<Path>,
+    ) -> Result<PlotData<NUM_CHUNK_SECTIONS>, PlotLoadError> {
         let mut file = File::open(&path)?;
 
         let mut magic = [0; 8];

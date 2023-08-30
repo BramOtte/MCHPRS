@@ -6,13 +6,14 @@ use crate::plot_data::{ChunkData, ChunkSectionData, PlotData, Tps};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::BlockPos;
 use mchprs_world::TickEntry;
+use rustc_hash::FxHashMap;
 use serde::Deserialize;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 #[derive(Deserialize)]
 pub struct PreHeaderChunkData {
     sections: BTreeMap<u8, ChunkSectionData>,
-    block_entities: HashMap<BlockPos, BlockEntity>,
+    block_entities: FxHashMap<BlockPos, BlockEntity>,
 }
 
 #[derive(Deserialize)]
@@ -23,7 +24,7 @@ pub struct PreHeaderPlotData {
     pub pending_ticks: Vec<TickEntry>,
 }
 
-pub fn try_fix(data: &[u8]) -> Option<PlotData> {
+pub fn try_fix<const NUM_SECTIONS: usize>(data: &[u8]) -> Option<PlotData<NUM_SECTIONS>> {
     let old_data: PreHeaderPlotData = bincode::deserialize(data).ok()?;
 
     let data = PlotData {
@@ -35,7 +36,8 @@ pub fn try_fix(data: &[u8]) -> Option<PlotData> {
             .chunk_data
             .into_iter()
             .map(|chunk| {
-                let mut sections: [Option<ChunkSectionData>; 16] = Default::default();
+                const INIT: Option<ChunkSectionData> = None;
+                let mut sections = [INIT; NUM_SECTIONS];
                 for (y, section) in chunk.sections.into_iter() {
                     if (y as usize) < sections.len() {
                         sections[y as usize] = Some(section);

@@ -1,23 +1,23 @@
 use super::Pass;
-use crate::blocks::ComparatorMode as CComparatorMode;
 use crate::redpiler::compile_graph::{
     CompileGraph, LinkType as CLinkType, NodeIdx, NodeType as CNodeType,
 };
 use crate::redpiler::{CompilerInput, CompilerOptions};
 use crate::world::World;
 use itertools::Itertools;
+use mchprs_blocks::blocks::ComparatorMode as CComparatorMode;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
 use redpiler_graph::{
     serialize, BlockPos, ComparatorMode, Link, LinkType, Node, NodeState, NodeType,
 };
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::fs;
 
 fn convert_node(
     graph: &CompileGraph,
     node_idx: NodeIdx,
-    nodes_map: &HashMap<NodeIdx, usize>,
+    nodes_map: &FxHashMap<NodeIdx, usize>,
 ) -> Node {
     let node = &graph[node_idx];
 
@@ -82,7 +82,8 @@ pub struct ExportGraph;
 
 impl<W: World> Pass<W> for ExportGraph {
     fn run_pass(&self, graph: &mut CompileGraph, _: &CompilerOptions, _: &CompilerInput<'_, W>) {
-        let mut nodes_map = HashMap::with_capacity(graph.node_count());
+        let mut nodes_map =
+            FxHashMap::with_capacity_and_hasher(graph.node_count(), Default::default());
         for node in graph.node_indices() {
             nodes_map.insert(node, nodes_map.len());
         }

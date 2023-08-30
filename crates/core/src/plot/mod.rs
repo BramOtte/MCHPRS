@@ -6,11 +6,11 @@ mod packet_handlers;
 mod scoreboard;
 pub mod worldedit;
 
-use crate::blocks::Block;
 use crate::chat::ChatComponent;
 use crate::config::CONFIG;
 use crate::player::{EntityId, Gamemode, PacketSender, Player, PlayerPos};
 use crate::redpiler::{Compiler, CompilerOptions};
+use crate::redstone;
 use crate::server::{BroadcastMessage, Message, PrivMessage};
 use crate::utils::HyphenatedUUID;
 use crate::world::storage::Chunk;
@@ -18,6 +18,7 @@ use crate::world::World;
 use anyhow::Context;
 use bus::BusReader;
 use mchprs_blocks::block_entities::BlockEntity;
+use mchprs_blocks::blocks::Block;
 use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::SlotData;
@@ -47,6 +48,11 @@ pub const PLOT_WIDTH: i32 = 2i32.pow(PLOT_SCALE);
 /// The plot width in blocks
 pub const PLOT_BLOCK_WIDTH: i32 = PLOT_WIDTH * 16;
 pub const NUM_CHUNKS: usize = PLOT_WIDTH.pow(2) as usize;
+
+/// The height of the world in sections (Default: 16, Max: 127)
+pub const PLOT_SECTIONS: usize = 16;
+/// The plot height in blocks
+pub const PLOT_BLOCK_HEIGHT: i32 = PLOT_SECTIONS as i32 * 16;
 
 pub const WORLD_SEND_RATE: Duration = Duration::from_millis(15);
 
@@ -125,7 +131,11 @@ impl PlotWorld {
     pub fn get_corners(&self) -> (BlockPos, BlockPos) {
         const W: i32 = PLOT_BLOCK_WIDTH;
         let first_pos = BlockPos::new(self.x * W, 0, self.z * W);
-        let second_pos = BlockPos::new((self.x + 1) * W - 1, 255, (self.z + 1) * W - 1);
+        let second_pos = BlockPos::new(
+            (self.x + 1) * W - 1,
+            PLOT_BLOCK_HEIGHT - 1,
+            (self.z + 1) * W - 1,
+        );
         (first_pos, second_pos)
     }
 }
@@ -139,7 +149,7 @@ impl World for PlotWorld {
         };
 
         // Check to see if block is within height limit
-        if pos.y >= 256 || pos.y < 0 {
+        if pos.y >= PLOT_BLOCK_HEIGHT || pos.y < 0 {
             return false;
         }
 
@@ -255,9 +265,7 @@ impl Plot {
         }
         while self.world.to_be_ticked.first().map_or(1, |e| e.ticks_left) == 0 {
             let entry = self.world.to_be_ticked.remove(0);
-            self.world
-                .get_block(entry.pos)
-                .tick(&mut self.world, entry.pos);
+            redstone::tick(self.world.get_block(entry.pos), &mut self.world, entry.pos);
         }
     }
 
@@ -317,8 +325,7 @@ impl Plot {
 
     fn set_pressure_plate(&mut self, pos: BlockPos, powered: bool) {
         if self.redpiler.is_active() {
-            self.redpiler
-                .set_pressure_plate(pos, powered);
+            self.redpiler.set_pressure_plate(pos, powered);
             return;
         }
 
@@ -327,8 +334,8 @@ impl Plot {
             Block::StonePressurePlate { .. } => {
                 self.world
                     .set_block(pos, Block::StonePressurePlate { powered });
-                Block::update_surrounding_blocks(&mut self.world, pos);
-                Block::update_surrounding_blocks(&mut self.world, pos.offset(BlockFace::Bottom));
+                redstone::update_surrounding_blocks(&mut self.world, pos);
+                redstone::update_surrounding_blocks(&mut self.world, pos.offset(BlockFace::Bottom));
             }
             _ => warn!("Block at {} is not a pressure plate", pos),
         }
@@ -461,7 +468,7 @@ impl Plot {
             if !Plot::chunk_in_plot_bounds(self.world.x, self.world.z, chunk_x, chunk_z) {
                 self.players[player_idx]
                     .client
-                    .send_packet(&Chunk::encode_emtpy_packet(chunk_x, chunk_z));
+                    .send_packet(&Chunk::encode_empty_packet(chunk_x, chunk_z));
             } else {
                 let chunk_data = self.world.chunks
                     [self.world.get_chunk_index_for_chunk(chunk_x, chunk_z)]
@@ -940,7 +947,7 @@ impl Plot {
     }
 
     fn from_data(
-        plot_data: PlotData,
+        plot_data: PlotData<PLOT_SECTIONS>,
         x: i32,
         z: i32,
         rx: BusReader<BroadcastMessage>,
@@ -1021,7 +1028,8 @@ impl Plot {
 
     fn save(&mut self) {
         let world = &mut self.world;
-        let chunk_data: Vec<ChunkData> = world.chunks.iter_mut().map(|c| c.save()).collect();
+        let chunk_data: Vec<ChunkData<PLOT_SECTIONS>> =
+            world.chunks.iter_mut().map(|c| c.save()).collect();
         let data = PlotData {
             tps: self.tps,
             chunk_data,

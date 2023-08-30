@@ -1328,7 +1328,7 @@ dependencies = [
 
 [[package]]
 name = "mchprs"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "mchprs_core",
  "tracing",
@@ -1371,12 +1371,14 @@ dependencies = [
  "mchprs_world",
  "md5",
  "mysql",
+ "once_cell",
  "petgraph",
  "rand",
  "redpiler_graph",
  "regex",
  "reqwest",
  "rusqlite",
+ "rustc-hash",
  "serde",
  "serde_json",
  "smallvec",
@@ -1390,6 +1392,7 @@ dependencies = [
 name = "mchprs_network"
 version = "0.1.0"
 dependencies = [
+ "bitvec",
  "byteorder",
  "flate2",
  "hematite-nbt",
@@ -1413,7 +1416,9 @@ dependencies = [
  "byteorder",
  "mchprs_blocks",
  "mchprs_world",
+ "rustc-hash",
  "serde",
+ "serde-big-array",
  "thiserror",
 ]
 
@@ -1677,9 +1682,9 @@ checksum = "0ab1bc2a289d34bd04a330323ac98a1b4bc82c9d9fcb1e66b63caa84da26b575"
 
 [[package]]
 name = "openssl"
-version = "0.10.52"
+version = "0.10.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01b8574602df80f7b85fdfc5392fa884a4e3b3f4f35402c070ab34c3d3f78d56"
+checksum = "345df152bc43501c5eb9e4654ff05f794effb78d4efe3d53abc158baddc0703d"
 dependencies = [
  "bitflags",
  "cfg-if",
@@ -1709,9 +1714,9 @@ checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.87"
+version = "0.9.90"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e17f59264b2809d77ae94f0e1ebabc434773f370d6ca667bd223ea10e06cc7e"
+checksum = "374533b0e45f3a7ced10fcaeccca020e66656bc03dac384f852e4e5a7a8104a6"
 dependencies = [
  "cc",
  "libc",
@@ -2203,6 +2208,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb2f3770c8bce3bcda7e149193a069a0f4365bda1fa5cd88e03bca26afc1216c"
 dependencies = [
  "serde_derive",
+]
+
+[[package]]
+name = "serde-big-array"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11fc7cc2c76d73e0f27ee52abbd64eec84d46f370c88371120433196934e4b7f"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

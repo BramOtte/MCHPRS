@@ -2,19 +2,19 @@
 //! https://github.com/SpongePowered/Schematic-Specification/blob/master/versions/schematic-2.md
 
 use super::WorldEditClipboard;
-use crate::blocks::Block;
 use crate::server::MC_DATA_VERSION;
 use crate::world::storage::PalettedBitBuffer;
 use anyhow::{bail, Context, Result};
 use itertools::Itertools;
 use mchprs_blocks::block_entities::BlockEntity;
+use mchprs_blocks::blocks::Block;
 use mchprs_blocks::BlockPos;
+use once_cell::sync::Lazy;
 use regex::Regex;
+use rustc_hash::FxHashMap;
 use serde::Serialize;
-use std::collections::HashMap;
 use std::fs::{self, File};
 use std::path::PathBuf;
-use std::sync::LazyLock;
 
 macro_rules! nbt_as {
     // I'm not sure if path is the right type here.
@@ -28,8 +28,8 @@ macro_rules! nbt_as {
 }
 
 fn parse_block(str: &str) -> Option<Block> {
-    static RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(?:minecraft:)?([a-z_]+)(?:\[([a-z=,0-9]+)\])?").unwrap());
+    static RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"(?:minecraft:)?([a-z_]+)(?:\[([a-z=,0-9]+)\])?").unwrap());
     let captures = RE.captures(str)?;
     let mut block = Block::from_name(captures.get(1)?.as_str()).unwrap_or(Block::Air {});
     if let Some(properties_match) = captures.get(2) {
@@ -56,7 +56,7 @@ pub fn load_schematic(file_name: &str) -> Result<WorldEditClipboard> {
     let offset_x = -nbt_as!(metadata["WEOffsetX"], Value::Int);
     let offset_y = -nbt_as!(metadata["WEOffsetY"], Value::Int);
     let offset_z = -nbt_as!(metadata["WEOffsetZ"], Value::Int);
-    let mut palette: HashMap<u32, u32> = HashMap::new();
+    let mut palette: FxHashMap<u32, u32> = FxHashMap::default();
     for (k, v) in nbt_palette {
         let id = *nbt_as!(v, Value::Int) as u32;
         let block = parse_block(k).with_context(|| format!("error parsing block: {}", k))?;
@@ -87,7 +87,7 @@ pub fn load_schematic(file_name: &str) -> Result<WorldEditClipboard> {
         }
     }
     let block_entities = nbt_as!(&nbt["BlockEntities"], Value::List);
-    let mut parsed_block_entities = HashMap::new();
+    let mut parsed_block_entities = FxHashMap::default();
     for block_entity in block_entities {
         let val = nbt_as!(block_entity, Value::Compound);
         let pos_array = nbt_as!(&val["Pos"], Value::IntArray);

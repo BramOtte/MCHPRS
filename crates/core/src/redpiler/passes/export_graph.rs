@@ -44,6 +44,8 @@ fn convert_node(
         ty: match node.ty {
             CNodeType::Repeater(delay) => NodeType::Repeater(delay),
             CNodeType::Torch => NodeType::Torch,
+            CNodeType::Chain(delay, inverted, is_repeater) => todo!(),
+            CNodeType::Decoder(state) => todo!(),
             CNodeType::Comparator(mode) => NodeType::Comparator(match mode {
                 CComparatorMode::Compare => ComparatorMode::Compare,
                 CComparatorMode::Subtract => ComparatorMode::Subtract,

@@ -120,6 +120,8 @@ enum NodeType {
     Repeater(u8),
     /// A non-locking repeater
     SimpleRepeater(u8),
+    Chain(u8, bool),
+    Decoder,
     Torch,
     Comparator(ComparatorMode),
     Lamp,
@@ -157,6 +159,10 @@ pub struct Node {
     facing_diode: bool,
     comparator_far_input: Option<u8>,
 
+    /// chains only
+    will_be_powered: bool,
+    /// decoders only
+    decoder_state: u32,
     /// Powered or lit
     powered: bool,
     /// Only for repeaters
@@ -210,7 +216,7 @@ impl Node {
             SmallVec::new()
         };
         stats.update_link_count += updates.len();
-
+        let mut decoder_state = 0;
         let ty = match node.ty {
             CNodeType::Repeater(delay) => {
                 if side_inputs.is_empty() {
@@ -218,6 +224,9 @@ impl Node {
                 } else {
                     NodeType::Repeater(delay)
                 }
+            }
+            CNodeType::Chain(delay, _inverted, ends_repeater) => {
+                NodeType::Chain(delay, ends_repeater)
             }
             CNodeType::Torch => NodeType::Torch,
             CNodeType::Comparator(mode) => NodeType::Comparator(mode),
@@ -228,6 +237,10 @@ impl Node {
             CNodeType::Trapdoor => NodeType::Trapdoor,
             CNodeType::Wire => NodeType::Wire,
             CNodeType::Constant => NodeType::Constant,
+            CNodeType::Decoder(state) => {
+                decoder_state = state;
+                NodeType::Decoder
+            },
         };
 
         Node {
@@ -236,6 +249,8 @@ impl Node {
             side_inputs,
             updates,
             powered: node.state.powered,
+            will_be_powered: node.state.powered,
+            decoder_state,
             output_power: node.state.output_strength,
             locked: node.state.repeater_locked,
             facing_diode: node.facing_diode,
@@ -257,11 +272,16 @@ impl Queues {
     }
 }
 
-#[derive(Default)]
 struct TickScheduler {
     queues_deque: [Queues; Self::NUM_QUEUES],
     pos: usize,
 }
+impl Default for TickScheduler {
+    fn default() -> Self {
+        Self { queues_deque: [(); Self::NUM_QUEUES].map(|()| Default::default()), pos: 0 }
+    }
+}
+
 
 impl TickScheduler {
     const NUM_PRIORITIES: usize = 4;
@@ -269,7 +289,7 @@ impl TickScheduler {
 
     fn reset<W: World>(&mut self, world: &mut W, blocks: &[Option<(BlockPos, Block)>]) {
         for (idx, queues) in self.queues_deque.iter().enumerate() {
-            let delay = if self.pos >= idx { idx + 16 } else { idx } - self.pos;
+            let delay = if self.pos >= idx { idx + Self::NUM_QUEUES } else { idx } - self.pos;
             for (entries, priority) in queues.0.iter().zip(Self::priorities()) {
                 for node in entries {
                     let Some((pos, _)) = blocks[node.index()] else {
@@ -508,6 +528,24 @@ impl JITBackend for DirectBackend {
                         self.set_node(node_id, false, 0);
                     }
                 }
+                NodeType::Chain(_delay, end_repeater) => {
+                    self.set_node(node_id, !node.powered, 15 - node.output_power);
+                }
+                NodeType::Decoder => {
+                    let old_state = node.decoder_state;
+                    let new_state = get_decoder_state(node);
+                    // println!("ticking {} {}", old_state, new_state);
+                    if old_state != new_state {
+                        let node = &mut self.nodes[node_id];
+                        node.decoder_state = new_state;
+                        node.changed = true;
+                        let old = node.updates[old_state as usize].node();
+                        let new = node.updates[new_state as usize].node();
+                        // TODO if relivant add specific signal strength
+                        update_node(&mut self.scheduler, &mut self.nodes, old);
+                        update_node(&mut self.scheduler, &mut self.nodes, new);
+                    }
+                }
                 _ => warn!("Node {:?} should not be ticked!", node.ty),
             }
         }
@@ -619,6 +657,15 @@ fn get_all_input(node: &Node) -> (u8, u8) {
     (input_power, side_input_power)
 }
 
+fn get_decoder_state(node: &Node) -> u32 {
+    let mut new_state = 0;
+    for i in 1..node.default_inputs.len() {
+        let input = node.default_inputs[i];
+        new_state = (new_state << 1) | if input > 0 {1} else {0};
+    }
+    new_state
+}
+
 #[inline(always)]
 fn update_node(scheduler: &mut TickScheduler, nodes: &mut Nodes, node_id: NodeId) {
     let node = &nodes[node_id];
@@ -721,6 +768,51 @@ fn update_node(scheduler: &mut TickScheduler, nodes: &mut Nodes, node_id: NodeId
                 let node = &mut nodes[node_id];
                 node.output_power = input_power;
                 node.changed = true;
+            }
+        }
+        NodeType::Chain(delay, ends_with_repeater) => {
+            if delay == 0 {
+                // let node = &mut nodes[node_id];
+                for i in 0..nodes[node_id].updates.len() {
+                    let node = &nodes[node_id];
+                    let update = node.updates[i];
+                    let distance = update.ss();
+                    let update = update.node();
+                    let new = if node.will_be_powered {0} else {15 - distance};
+                    let old = if node.will_be_powered {15 - distance} else {0};
+                    {
+                        let update = &mut nodes[update];
+                        update.default_inputs[old as usize] -= 1;
+                        update.default_inputs[new as usize] += 1;
+                    }
+                    update_node(scheduler, nodes, update);
+                }
+            } else {
+                let node = &mut nodes[node_id];
+                node.will_be_powered = !node.will_be_powered;
+                let priority = if ends_with_repeater {
+                    if node.facing_diode {
+                        TickPriority::Highest
+                    } else if !node.will_be_powered {
+                        TickPriority::Higher
+                    } else {
+                        TickPriority::High
+                    }
+                } else {
+                    TickPriority::Normal
+                };
+                schedule_tick(scheduler, node_id, node, delay as usize, priority);
+            }
+        }
+        NodeType::Decoder => {
+            let new_state = get_decoder_state(node);
+            // println!("updating {} {}", node.decoder_state, new_state);
+            if node.decoder_state == new_state {
+                return;
+            }
+            if !node.pending_tick {
+                let node = &mut nodes[node_id];
+                schedule_tick(scheduler, node_id, node, 1, TickPriority::Highest);
             }
         }
         _ => {} // panic!("Node {:?} should not be updated!", node.state),

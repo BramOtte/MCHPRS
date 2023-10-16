@@ -7,6 +7,8 @@ pub type NodeIdx = NodeIndex;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeType {
     Repeater(u8),
+    Chain(u8, bool, bool),
+    Decoder(u32),
     Torch,
     Comparator(ComparatorMode),
     Lamp,
@@ -80,7 +82,7 @@ pub enum LinkType {
     Side,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct CompileLink {
     pub ty: LinkType,
     pub ss: u8,

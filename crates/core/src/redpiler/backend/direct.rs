@@ -149,12 +149,25 @@ impl NodeType {
                 | NodeType::PressurePlate
         )
     }
+
+    fn is_analog(self) -> bool {
+        matches!(self, NodeType::Comparator(..) | NodeType::Wire)
+    }
 }
 
 #[repr(align(16))]
 #[derive(Debug, Clone, Default)]
 struct NodeInput {
     ss_counts: [u8; 16],
+}
+impl NodeInput {
+    fn ss(&self) -> u8 {
+        self.ss_counts[0] 
+    }
+
+    fn powered(&self) -> bool {
+        self.ss_counts[0] > 0
+    }
 }
 
 // struct is 128 bytes to fit nicely into cachelines
@@ -210,14 +223,26 @@ impl Node {
                         );
                     }
                     default_input_count += 1;
-                    default_inputs.ss_counts[ss as usize] += 1;
+                    if ss > 0 {
+                        if node.ty.is_analog() {
+                            default_inputs.ss_counts[ss as usize] += 1;
+                        } else {
+                            default_inputs.ss_counts[0] += 1;
+                        }
+                    }
                 }
                 LinkType::Side => {
                     if side_input_count >= MAX_INPUTS {
                         panic!("Exceeded the maximum number of side inputs {}", MAX_INPUTS);
                     }
                     side_input_count += 1;
-                    side_inputs.ss_counts[ss as usize] += 1;
+                    if ss > 0 {
+                        if node.ty.is_analog() {
+                            side_inputs.ss_counts[ss as usize] += 1;
+                        } else {
+                            side_inputs.ss_counts[0] += 1;
+                        }
+                    }
                 }
             }
         }
@@ -262,6 +287,11 @@ impl Node {
             CNodeType::Wire => NodeType::Wire,
             CNodeType::Constant => NodeType::Constant,
         };
+
+        if ty.is_analog() {
+            default_inputs.ss_counts[0] = last_index_positive(&default_inputs.ss_counts) as u8;
+            side_inputs.ss_counts[0] = last_index_positive(&side_inputs.ss_counts) as u8;
+        }
 
         Node {
             ty,
@@ -386,26 +416,64 @@ impl DirectBackend {
             let side = update_link.side();
             let distance = update_link.ss();
             let update = update_link.node();
-
+            
             let update_ref = &mut self.nodes[update];
             let inputs = if side {
                 &mut update_ref.side_inputs
             } else {
                 &mut update_ref.default_inputs
             };
- 
-            let old_power = old_power.saturating_sub(distance);
-            let new_power = new_power.saturating_sub(distance);
+            
+            if update_ref.ty.is_analog() {
+                let old_power = old_power.saturating_sub(distance);
+                let new_power = new_power.saturating_sub(distance);
 
-            if old_power == new_power {
-                continue;
-            }
+                if old_power == new_power {
+                    continue;
+                }
+                // Safety: signal strength is never larger than 15
+                unsafe {
+                    if old_power > 0 {
+                        *inputs.ss_counts.get_unchecked_mut(old_power as usize) -= 1;
+                    }
+                    if new_power > 0 {
+                        *inputs.ss_counts.get_unchecked_mut(new_power as usize) += 1;
+                    }
+                }
+    
+                if old_power == inputs.ss_counts[0] {
+                    if inputs.ss_counts[old_power as usize] != 0 {
+                        continue;
+                    }
+                } else {
+                    if new_power < inputs.ss_counts[0] {
+                        continue;
+                    }
+                }
 
-            // Safety: signal strength is never larger than 15
-            unsafe {
-                *inputs.ss_counts.get_unchecked_mut(old_power as usize) -= 1;   
-                *inputs.ss_counts.get_unchecked_mut(new_power as usize) += 1;
-            }
+                let power = last_index_positive(&inputs.ss_counts) as u8;
+                
+                inputs.ss_counts[0] = power;
+            } else {
+                let old_power = old_power > distance;
+                let new_power = new_power > distance;
+
+                if old_power == new_power {
+                    continue;
+                }
+
+                if new_power {
+                    inputs.ss_counts[0] += 1;
+                    if inputs.ss_counts[0] != 1 {
+                        continue;
+                    }
+                } else {
+                    inputs.ss_counts[0] -= 1;
+                    if inputs.ss_counts[0] != 0 {
+                        continue;
+                    }
+                }
+            };
 
             update_node(&mut self.scheduler, &mut self.nodes, update);
         }
@@ -648,16 +716,14 @@ fn schedule_tick(
     scheduler.schedule_tick(node_id, delay, priority);
 }
 
-const BOOL_INPUT_MASK: u128 = u128::from_ne_bytes([
-    0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-]);
-
 fn get_bool_input(node: &Node) -> bool {
-    u128::from_le_bytes(node.default_inputs.ss_counts) & BOOL_INPUT_MASK != 0
+    debug_assert!(!node.ty.is_analog());
+    node.default_inputs.powered()
 }
 
 fn get_bool_side(node: &Node) -> bool {
-    u128::from_le_bytes(node.side_inputs.ss_counts) & BOOL_INPUT_MASK != 0
+    debug_assert!(!node.ty.is_analog());
+    node.side_inputs.powered()
 }
 
 fn last_index_positive(array: &[u8; 16]) -> u32 {
@@ -671,9 +737,11 @@ fn last_index_positive(array: &[u8; 16]) -> u32 {
 }
 
 fn get_all_input(node: &Node) -> (u8, u8) {
-    let input_power = last_index_positive(&node.default_inputs.ss_counts) as u8;
+    debug_assert!(node.ty.is_analog());
 
-    let side_input_power = last_index_positive(&node.side_inputs.ss_counts) as u8;
+    let input_power = node.default_inputs.ss() as u8;
+
+    let side_input_power = node.side_inputs.ss() as u8;
 
     (input_power, side_input_power)
 }

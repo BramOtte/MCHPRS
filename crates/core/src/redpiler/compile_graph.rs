@@ -22,6 +22,10 @@ impl NodeType {
     pub fn is_output(self) -> bool {
         matches!(self, NodeType::Lamp | NodeType::Trapdoor)
     }
+
+    pub fn is_analog(self) -> bool {
+        matches!(self, NodeType::Comparator(..) | NodeType::Wire)
+    }
 }
 
 #[derive(Debug, Clone, Default)]

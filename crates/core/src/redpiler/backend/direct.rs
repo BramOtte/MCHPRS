@@ -97,11 +97,10 @@ struct ForwardLink {
 }
 
 impl ForwardLink {
-    pub fn new(id: NodeId, side: bool, mut ss: u8) -> Self {
+    pub fn new(id: NodeId, side: bool, ss: u8) -> Self {
         assert!(id.index() < (1 << 27));
-        if ss >= 16 {
-            ss = 15;
-        }
+        // the clamp_weights compile pass should ensure ss < 16
+        assert!(ss < 16);
         Self {
             data: (id.index() as u32) << 5 | if side { 1 << 4 } else { 0 } | ss as u32,
         }
@@ -154,14 +153,20 @@ impl NodeType {
     }
 }
 
+#[repr(align(16))]
+#[derive(Debug, Clone, Default)]
+struct NodeInput {
+    ss_counts: [u8; 16],
+}
+
 // struct is 128 bytes to fit nicely into cachelines
 // which are usualy 64 bytes, it can vary but is almost always a power of 2
 #[derive(Debug, Clone)]
 #[repr(align(128))]
 pub struct Node {
     ty: NodeType,
-    default_inputs: [u8; 16],
-    side_inputs: [u8; 16],
+    default_inputs: NodeInput,
+    side_inputs: NodeInput,
     updates: SmallVec<[ForwardLink; 18]>,
 
     facing_diode: bool,
@@ -189,14 +194,14 @@ impl Node {
         stats: &mut FinalGraphStats,
     ) -> Self {
         let node = &graph[node_idx];
-        
+
         const MAX_INPUTS: usize = 255;
-        
+
         let mut default_input_count = 0;
         let mut side_input_count = 0;
 
-        let mut default_inputs = [0; 16];
-        let mut side_inputs = [0; 16];
+        let mut default_inputs = NodeInput { ss_counts: [0; 16] };
+        let mut side_inputs = NodeInput { ss_counts: [0; 16] };
         for edge in graph.edges_directed(node_idx, Direction::Incoming) {
             let weight = edge.weight();
             let distance = weight.ss;
@@ -205,17 +210,20 @@ impl Node {
             match weight.ty {
                 LinkType::Default => {
                     if default_input_count >= MAX_INPUTS {
-                        panic!("Exceeded the maximum number of default inputs {}", MAX_INPUTS);
+                        panic!(
+                            "Exceeded the maximum number of default inputs {}",
+                            MAX_INPUTS
+                        );
                     }
                     default_input_count += 1;
-                    default_inputs[ss as usize] += 1;
-                },
+                    default_inputs.ss_counts[ss as usize] += 1;
+                }
                 LinkType::Side => {
                     if side_input_count >= MAX_INPUTS {
                         panic!("Exceeded the maximum number of side inputs {}", MAX_INPUTS);
                     }
                     side_input_count += 1;
-                    side_inputs[ss as usize] += 1;
+                    side_inputs.ss_counts[ss as usize] += 1;
                 }
             }
         }
@@ -405,8 +413,19 @@ impl DirectBackend {
             } else {
                 &mut update_ref.default_inputs
             };
-            inputs[old_power.saturating_sub(distance) as usize] -= 1;
-            inputs[new_power.saturating_sub(distance) as usize] += 1;
+
+            let old_power = old_power.saturating_sub(distance);
+            let new_power = new_power.saturating_sub(distance);
+
+            if old_power == new_power {
+                continue;
+            }
+
+            // Safety: signal strength is never larger than 15
+            unsafe {
+                *inputs.ss_counts.get_unchecked_mut(old_power as usize) -= 1;
+                *inputs.ss_counts.get_unchecked_mut(new_power as usize) += 1;
+            }
 
             update_node(&mut self.scheduler, &mut self.nodes, update);
         }
@@ -672,11 +691,11 @@ const BOOL_INPUT_MASK: u128 = u128::from_ne_bytes([
 ]);
 
 fn get_bool_input(node: &Node) -> bool {
-    u128::from_ne_bytes(node.default_inputs) & BOOL_INPUT_MASK != 0
+    u128::from_le_bytes(node.default_inputs.ss_counts) & BOOL_INPUT_MASK != 0
 }
 
 fn get_bool_side(node: &Node) -> bool {
-    u128::from_ne_bytes(node.side_inputs) & BOOL_INPUT_MASK != 0
+    u128::from_le_bytes(node.side_inputs.ss_counts) & BOOL_INPUT_MASK != 0
 }
 
 fn last_index_positive(array: &[u8; 16]) -> u32 {
@@ -690,17 +709,17 @@ fn last_index_positive(array: &[u8; 16]) -> u32 {
 }
 
 fn get_all_input(node: &Node) -> (u8, u8) {
-    let input_power = last_index_positive(&node.default_inputs) as u8;
+    let input_power = last_index_positive(&node.default_inputs.ss_counts) as u8;
 
-    let side_input_power = last_index_positive(&node.side_inputs) as u8;
+    let side_input_power = last_index_positive(&node.side_inputs.ss_counts) as u8;
 
     (input_power, side_input_power)
 }
 
 fn get_decoder_state(node: &Node) -> u32 {
     let mut new_state = 0;
-    for i in 1..node.default_inputs.len() {
-        let input = node.default_inputs[i];
+    for i in 1..node.default_inputs.ss_counts.len() {
+        let input = node.default_inputs.ss_counts[i];
         new_state = (new_state << 1) | if input > 0 {1} else {0};
     }
     new_state
@@ -821,8 +840,8 @@ fn update_node(scheduler: &mut TickScheduler, nodes: &mut Nodes, node_id: NodeId
                     let old = if node.will_be_powered {15 - distance} else {0};
                     {
                         let update = &mut nodes[update];
-                        update.default_inputs[old as usize] -= 1;
-                        update.default_inputs[new as usize] += 1;
+                        update.default_inputs.ss_counts[old as usize] -= 1;
+                        update.default_inputs.ss_counts[new as usize] += 1;
                     }
                     update_node(scheduler, nodes, update);
                 }

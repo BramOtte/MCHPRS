@@ -1,4 +1,6 @@
-use super::common::{calculate_comparator_output, ForwardLink, NodeId, NodeIdWithData, NonMaxU8};
+mod common;
+
+use common::{calculate_comparator_output, ForwardLink, NodeId, NodeIdWithData, NonMaxU8};
 use super::JITBackend;
 use crate::redpiler::compile_graph::{self, CompileGraph, LinkType, NodeIdx};
 use crate::redpiler::{block_powered_mut, CompilerOptions, TaskMonitor};
@@ -37,7 +39,7 @@ struct FinalGraphStats {
 }
 
 mod nodes {
-    use crate::redpiler::backend::common::NodeId;
+    use super::common::NodeId;
 
     use super::Node;
     use std::ops::{Index, IndexMut};

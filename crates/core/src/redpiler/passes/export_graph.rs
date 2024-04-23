@@ -6,6 +6,7 @@ use crate::redpiler::{CompilerInput, CompilerOptions};
 use crate::world::World;
 use itertools::Itertools;
 use mchprs_blocks::blocks::ComparatorMode as CComparatorMode;
+use petgraph::dot::Dot;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
 use redpiler_graph::{
@@ -68,6 +69,10 @@ fn convert_node(
             CNodeType::Wire => NodeType::Wire,
             CNodeType::Constant => NodeType::Constant,
             CNodeType::NoteBlock { .. } => NodeType::NoteBlock,
+            // TODO Add new node types to the other crate as well
+            CNodeType::ExternalInput => todo!(),
+            CNodeType::ExternalOutput { .. } => todo!(),
+            CNodeType::ComparatorLine { states: _ } => todo!(),
         },
         block: node.block.map(|(pos, id)| {
             (
@@ -107,6 +112,11 @@ impl<W: World> Pass<W> for ExportGraph {
             .collect_vec();
 
         fs::write("redpiler_graph.bc", serialize(nodes.as_slice()).unwrap()).unwrap();
+        fs::write(
+            "redpiler_graph.dot",
+            format!("{}", Dot::with_config(&*graph, &[])),
+        )
+        .unwrap();
     }
 
     fn should_run(&self, options: &CompilerOptions) -> bool {

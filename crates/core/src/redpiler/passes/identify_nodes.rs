@@ -9,10 +9,11 @@
 
 use super::Pass;
 use crate::redpiler::compile_graph::{
-    Annotations, CompileGraph, CompileNode, NodeIdx, NodeState, NodeType,
+    Annotations, CompileGraph, CompileNode, LinkType, NodeIdx, NodeState, NodeType
 };
-use crate::redpiler::{CompilerInput, CompilerOptions};
+use crate::redpiler::{BackendVariant, CompilerInput, CompilerOptions};
 use crate::redstone::{self, comparator, noteblock};
+use crate::redstone::comparator::get_far_input;
 use crate::world::{for_each_block_optimized, World};
 use itertools::Itertools;
 use mchprs_blocks::block_entities::BlockEntity;
@@ -20,6 +21,8 @@ use mchprs_blocks::blocks::Block;
 use mchprs_blocks::{BlockDirection, BlockFace, BlockPos};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::Value;
+use petgraph::Direction;
+use std::str::FromStr;
 use tracing::warn;
 
 pub struct IdentifyNodes;
@@ -129,7 +132,7 @@ fn identify_block<W: World>(
         Block::RedstoneComparator { comparator } => (
             NodeType::Comparator {
                 mode: comparator.mode,
-                far_input: comparator::get_far_input(world, pos, comparator.facing),
+                far_input: get_far_input(world, pos, comparator.facing),
                 facing_diode: redstone::is_diode(
                     world.get_block(pos.offset(comparator.facing.opposite().block_face())),
                 ),
@@ -229,33 +232,71 @@ fn parse_sign_annotations(entity: Option<&BlockEntity>) -> Vec<NodeAnnotation> {
         sign.rows
             .iter()
             .flat_map(|row| serde_json::from_str(row))
-            .flat_map(|json: Value| NodeAnnotation::parse(json.as_object()?.get("text")?.as_str()?))
+            .flat_map(|json: Value| {
+                NodeAnnotation::from_str(json.as_object()?.get("text")?.as_str()?).ok()
+            })
             .collect_vec()
     } else {
         vec![]
     }
 }
 
-pub enum NodeAnnotation {}
+pub enum NodeAnnotation {
+    Separate { delay: u32 },
+}
 
 impl NodeAnnotation {
-    fn parse(s: &str) -> Option<Self> {
-        let s = s.trim().to_ascii_lowercase();
-        if !(s.starts_with('[') && s.ends_with(']')) {
-            return None;
-        }
-        let parts = s[1..s.len() - 1].split(' ').collect_vec();
-        match parts.as_slice() {
-            _ => None,
-        }
-    }
-
     fn apply(
         self,
-        _graph: &mut CompileGraph,
-        _node_idx: NodeIdx,
-        _options: &CompilerOptions,
+        graph: &mut CompileGraph,
+        node_idx: NodeIdx,
+        options: &CompilerOptions,
     ) -> Result<(), String> {
-        match self {}
+        match self {
+            NodeAnnotation::Separate { delay } => {
+                let has_side_input = graph
+                    .edges_directed(node_idx, Direction::Incoming)
+                    .any(|edge| edge.weight().ty == LinkType::Side);
+                if has_side_input {
+                    return Err(format!(
+                        "Separate annotation does not allow for side inputs"
+                    ));
+                }
+                let node = &mut graph[node_idx];
+                if !matches!(node.ty, NodeType::Comparator { .. }) {
+                    return Err(format!(
+                        "Separate annotation only allowed on comparators, not {:?}",
+                        node.ty
+                    ));
+                }
+                if node.annotations.separate != None {
+                    return Err(format!("Separate annotation was already present"));
+                }
+                if options.backend_variant == BackendVariant::Threading {
+                    node.annotations.separate = Some(delay);
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl FromStr for NodeAnnotation {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim().to_ascii_lowercase();
+        if s.starts_with('[') && s.ends_with(']') {
+            let parts = s[1..s.len() - 1].split(' ').collect_vec();
+            match parts.as_slice() {
+                ["separate", delay_str] => delay_str
+                    .parse::<u32>()
+                    .map(|delay| NodeAnnotation::Separate { delay })
+                    .map_err(|_| ()),
+                _ => Err(()),
+            }
+        } else {
+            Err(())
+        }
     }
 }

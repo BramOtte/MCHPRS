@@ -1402,6 +1402,7 @@ dependencies = [
  "once_cell",
  "petgraph",
  "rand",
+ "realtime_channel",
  "redpiler_graph",
  "regex",
  "reqwest",
@@ -1410,6 +1411,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smallvec",
+ "thread-priority",
  "tokio",
  "toml 0.7.3",
  "toml_edit",
@@ -1878,9 +1880,9 @@ checksum = "dc375e1527247fe1a97d8b7156678dfe7c1af2fc075c9a4db3690ecd2a148068"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.56"
+version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b63bdb0cd06f1f4dedf69b254734f9b45af66e4a031e42a7480257d9898b435"
+checksum = "134c189feb4956b20f6f547d2cf727d4c0fe06722b20a0eec87ed445a97f92da"
 dependencies = [
  "unicode-ident",
 ]
@@ -1971,6 +1973,10 @@ dependencies = [
  "crossbeam-utils",
  "num_cpus",
 ]
+
+[[package]]
+name = "realtime_channel"
+version = "0.1.0"
 
 [[package]]
 name = "redox_syscall"
@@ -2158,6 +2164,12 @@ dependencies = [
  "linux-raw-sys",
  "windows-sys 0.48.0",
 ]
+
+[[package]]
+name = "rustversion"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ffc183a10b4478d04cbbbfc96d0873219d962dd5accaff2ffbd4ceb7df837f4"
 
 [[package]]
 name = "ryu"
@@ -2449,6 +2461,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.15",
+]
+
+[[package]]
+name = "thread-priority"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1504bc534c1b6db674e4bbd46e1d77462f803fdf042bc237fb2ebebc0f0e3aa5"
+dependencies = [
+ "bitflags 1.3.2",
+ "cfg-if",
+ "libc",
+ "log",
+ "rustversion",
+ "winapi",
 ]
 
 [[package]]

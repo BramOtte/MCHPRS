@@ -54,6 +54,7 @@ pub struct CompilerOptions {
 pub enum BackendVariant {
     #[default]
     Direct,
+    Threading,
 }
 
 impl CompilerOptions {
@@ -68,6 +69,7 @@ impl CompilerOptions {
                     "--io-only" => co.io_only = true,
                     "--update" => co.update = true,
                     "--export-dot" => co.export_dot_graph = true,
+                    "--threading" => co.backend_variant = BackendVariant::Threading,
                     // FIXME: use actual error handling
                     _ => warn!("Unrecognized option: {}", option),
                 }
@@ -79,12 +81,12 @@ impl CompilerOptions {
                         "e" => co.export = true,
                         "i" => co.io_only = true,
                         "u" => co.update = true,
+                        "t" => co.backend_variant = BackendVariant::Threading,
                         // FIXME: use actual error handling
                         _ => warn!("Unrecognized option: -{}", c),
                     }
                 }
             } else {
-                // FIXME: use actual error handling
                 warn!("Unrecognized option: {}", option);
             }
         }
@@ -111,7 +113,7 @@ impl Compiler {
         }
     }
 
-    /// Use just-in-time compilation with a `JITBackend` such as the `DirectBackend`.
+    /// Use just-in-time compilation with a `JITBackend` such as `DirectBackend` or `ThreadingBackend`.
     /// Requires recompilation to take effect.
     pub fn use_jit(&mut self, jit: BackendDispatcher) {
         self.jit = Some(jit);
@@ -140,14 +142,21 @@ impl Compiler {
             Some(BackendDispatcher::DirectBackend(_)) => {
                 options.backend_variant != BackendVariant::Direct
             }
+            Some(BackendDispatcher::ThreadingBackend(_)) => {
+                options.backend_variant != BackendVariant::Threading
+            }
             None => true,
         };
         if replace_jit {
             debug!("Switching jit backend to {:?}", options.backend_variant);
             let jit = match options.backend_variant {
                 BackendVariant::Direct => BackendDispatcher::DirectBackend(Default::default()),
+                BackendVariant::Threading => {
+                    BackendDispatcher::ThreadingBackend(Default::default())
+                }
             };
             self.use_jit(jit);
+            debug!("Replaced old jit dispatcher");
         }
 
         if let Some(jit) = &mut self.jit {

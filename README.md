@@ -8,19 +8,22 @@ MCHPRS is very different from traditional servers. Because this server is tailor
 
 MCHPRS has made it possible to run programs such as [Graph Rendering, Conway's Game of Life, and Mandelbrot Rendering](https://www.youtube.com/watch?v=FDiapbD0Xfg) on CPUs in Minecraft. To accomplish these speeds, we created [Redpiler](docs/Redpiler.md), the "Redstone Compiler".
 
+A new experimental multi-threaded backend is also available now. Consult the [Threading](docs/Threading.md) documentation for a usage guide and examples.
+
 ## Table of Contents
 
-- [Table of Contents](#table-of-contents)
-- [Building](#building)
-- [Configuration](#configuration)
+- [Minecraft High-Performance Redstone Server](#minecraft-high-performance-redstone-server)
+  - [Table of Contents](#table-of-contents)
+  - [Building](#building)
+  - [Configuration](#configuration)
     - [LuckPerms](#luckperms)
-- [Usage](#usage)
+  - [Usage](#usage)
     - [General Commands](#general-commands)
     - [Plot Ownership](#plot-ownership)
     - [Worldedit](#worldedit)
-- [Acknowledgments](#acknowledgments)
-- [Contributing](#contributing)
-- [License](#license)
+  - [Acknowledgments](#acknowledgments)
+  - [Contributing](#contributing)
+  - [License](#license)
 
 ## Building
 
@@ -86,7 +89,7 @@ server_context = "global"
 | `/speed [speed]` | None | Sets your flyspeed. |
 | `/gamemode [mode]` | `/gmc`, `/gmsp` | Sets your gamemode. |
 | `/container [type] [power]` | None | Gives you a container (e.g. barrel) which outputs a specified amount of power when used with a comparator. |
-| `/redpiler compile` | `/rp c` | Manually starts redpiler compilation. Available flags: --io-only --optimize --export --update (or in short: -ioeu) |
+| `/redpiler compile` | `/rp c` | Manually starts redpiler compilation. Available flags: --io-only --optimize --export --update --threading (or in short: -ioeut) |
 | `/redpiler reset` | `/rp r` | Stops redpiler. |
 | `/toggleautorp` | None | Toggles automatic redpiler compilation. |
 | `/stop` | None | Stops the server. |

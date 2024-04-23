@@ -2,6 +2,7 @@ use mchprs_blocks::BlockPos;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
 pub enum TickPriority {
     Highest = 0,
     Higher = 1,

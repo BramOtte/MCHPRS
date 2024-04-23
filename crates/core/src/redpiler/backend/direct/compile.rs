@@ -121,6 +121,9 @@ fn compile_node(
             noteblock_info.push((node.block.unwrap().0, *instrument, *note));
             NodeType::NoteBlock { noteblock_id }
         }
+        CNodeType::ComparatorLine { states } => todo!(),
+        CNodeType::ExternalInput => todo!(),
+        CNodeType::ExternalOutput { target_idx, delay } => todo!(),
     };
 
     Node {

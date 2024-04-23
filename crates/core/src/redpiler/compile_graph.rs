@@ -1,6 +1,10 @@
 use mchprs_blocks::blocks::{ComparatorMode, Instrument};
 use mchprs_blocks::BlockPos;
 use petgraph::stable_graph::{NodeIndex, StableGraph};
+use rustc_hash::FxHashSet;
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+use std::fmt::Display;
 
 pub type NodeIdx = NodeIndex;
 
@@ -26,6 +30,14 @@ pub enum NodeType {
     NoteBlock {
         instrument: Instrument,
         note: u32,
+    },
+    ComparatorLine {
+        states: Box<[u8]>,
+    },
+    ExternalInput,
+    ExternalOutput {
+        target_idx: NodeIdx,
+        delay: u32,
     },
 }
 
@@ -70,7 +82,9 @@ impl NodeState {
 }
 
 #[derive(Debug, Default)]
-pub struct Annotations {}
+pub struct Annotations {
+    pub separate: Option<u32>,
+}
 
 #[derive(Debug)]
 pub struct CompileNode {
@@ -85,7 +99,59 @@ pub struct CompileNode {
 
 impl CompileNode {
     pub fn is_removable(&self) -> bool {
-        !self.is_input && !self.is_output
+        !self.is_input && !self.is_output && self.annotations.separate == None
+    }
+
+    pub fn is_io_and_flushable(&self) -> bool {
+        (self.is_input || self.is_output) && self.block.is_some()
+    }
+
+    pub fn can_be_ticked(&self) -> bool {
+        matches!(
+            self.ty,
+            NodeType::Repeater { .. }
+                | NodeType::Comparator { .. }
+                | NodeType::Torch
+                | NodeType::Button
+                | NodeType::Lamp
+                | NodeType::ComparatorLine { .. }
+        )
+    }
+
+    pub fn is_analog(&self) -> bool {
+        matches!(
+            self.ty,
+            NodeType::Comparator { .. }
+                | NodeType::Wire
+                | NodeType::ExternalOutput { .. }
+                | NodeType::ComparatorLine { .. }
+        )
+    }
+}
+
+impl Display for CompileNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match &self.ty {
+                NodeType::Repeater { delay, .. } => format!("Repeater({})", delay),
+                NodeType::Torch => format!("Torch"),
+                NodeType::Comparator { mode, .. } =>
+                    format!("Comparator({})", match mode {ComparatorMode::Compare=>"Cmp",ComparatorMode::Subtract=>"Sub",}),
+                NodeType::Lamp => format!("Lamp"),
+                NodeType::Button => format!("Button"),
+                NodeType::Lever => format!("Lever"),
+                NodeType::PressurePlate => format!("PressurePlate"),
+                NodeType::Trapdoor => format!("Trapdoor"),
+                NodeType::Wire => format!("Wire"),
+                NodeType::Constant => format!("Constant"),
+                NodeType::ExternalInput => format!("ExternalInput"),
+                NodeType::ExternalOutput { .. } => format!("ExternalOutput"),
+                NodeType::ComparatorLine { states } => format!("ComparatorLine({})", states.len()),
+                NodeType::NoteBlock { instrument, note } => todo!(),
+            }
+        )
     }
 }
 
@@ -121,4 +187,64 @@ impl CompileLink {
     }
 }
 
+impl Display for CompileLink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}",
+            match self.ty {
+                LinkType::Default => "",
+                LinkType::Side => "S",
+            },
+            self.ss
+        )
+    }
+}
+
 pub type CompileGraph = StableGraph<CompileNode, CompileLink>;
+
+pub fn weakly_connected_components(graph: &CompileGraph) -> Vec<Vec<NodeIdx>> {
+    let mut visited = FxHashSet::with_capacity_and_hasher(graph.node_count(), Default::default());
+    let mut components = vec![];
+
+    for node in graph.node_indices() {
+        if !visited.contains(&node) {
+            visited.insert(node);
+
+            let mut component = vec![node];
+            let mut index = 0;
+            while component.len() > index {
+                for neighbor in graph.neighbors_undirected(component[index]) {
+                    if !visited.contains(&neighbor) {
+                        visited.insert(neighbor);
+                        component.push(neighbor);
+                    }
+                }
+                index += 1;
+            }
+            components.push(component);
+        }
+    }
+    components
+}
+
+// Merge groups into `k` bins using a greedy algorithm for the multiway number partitioning problem.
+// TODO: In the future a higher quality algorithm should be used here.
+pub fn multiway_number_partitioning(mut groups: Vec<Vec<NodeIdx>>, k: usize) -> Vec<Vec<NodeIdx>> {
+    if groups.len() <= k {
+        return groups;
+    }
+    groups.sort_by_key(|group| Reverse(group.len()));
+
+    let mut bins: BinaryHeap<(Reverse<usize>, Vec<NodeIdx>)> = BinaryHeap::with_capacity(k);
+    for _ in 0..k {
+        bins.push((Reverse(0), vec![]));
+    }
+
+    for group in groups {
+        let (_, mut bin) = bins.pop().unwrap();
+        bin.extend(group);
+        bins.push((Reverse(bin.len()), bin));
+    }
+    bins.into_iter().map(|(_, bin)| bin).collect()
+}

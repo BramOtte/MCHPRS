@@ -23,8 +23,8 @@ include = [
 opt-level = 1
 
 [profile.release]
-# This seems to speed up Redpiler compile times
 lto = "fat"
+codegen-units = 1
 
 [dependencies]
 mchprs_core = { path = "./crates/core" }

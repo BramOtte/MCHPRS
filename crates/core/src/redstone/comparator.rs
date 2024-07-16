@@ -46,7 +46,7 @@ pub fn get_override(block: Block, world: &impl World, pos: BlockPos) -> u8 {
                     ..
                 }) => *comparator_override,
                 Some(_) => unreachable!("Backing blockentity type is invalid"),
-                None => unreachable!("Backing blockentity does not exist"),
+                None => 0,
             }
         }
         Block::Cauldron { level } => level,

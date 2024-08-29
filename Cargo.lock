@@ -50,6 +50,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "aigrs"
+version = "0.1.0"
+dependencies = [
+ "petgraph",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1255,6 +1262,7 @@ dependencies = [
 name = "mchprs_redpiler"
 version = "0.1.0"
 dependencies = [
+ "aigrs",
  "enum_dispatch",
  "itertools 0.13.0",
  "mchprs_blocks",

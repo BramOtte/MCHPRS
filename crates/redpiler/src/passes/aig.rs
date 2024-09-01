@@ -1,9 +1,10 @@
 use std::default;
-use std::io::{Write};
+use std::io::{BufWriter, Write};
 use std::fs::File;
 use std::ops::Not;
 use std::path::Display;
 
+use mchprs_blocks::blocks::ComparatorMode;
 use petgraph::data::Build;
 use petgraph::graph::{EdgeIndex, EdgeReference, NodeIndex};
 use petgraph::visit::{EdgeRef, IntoEdgesDirected, IntoNodeReferences, NodeIndexable, NodeRef};
@@ -22,14 +23,14 @@ use aigrs::networks::petaig::*;
 enum Input {
     None,
     Binary(Node),
-    Hex([Node; 4])
+    Hex([Node; 15])
 }
 
 #[derive(Debug, Clone, Copy)]
 enum DOutput {
     None,
     Binary(AigLit),
-    Hex([AigLit; 4]),
+    Hex([AigLit; 15]),
 }
 
 #[derive(Debug)]
@@ -127,26 +128,60 @@ impl<W: World> Pass<W> for ExportAig {
                     
                     node_map.insert(index, Data::unary(default_input, output));
                 },
-                NodeType::Comparator { mode, far_input, facing_diode } => {
-                    // let default_input = aig.local_input();
-                    // let side_input = aig.local_input();
+                NodeType::Comparator { mode, far_input, .. } => {
+                    let default_inputs = [(); 15].map(|_| aig.local_input());
+                    let side_inputs = [(); 15].map(|_| aig.local_input());
+                    let mut outputs = [(); 15].map(|_| Vec::<AigLit>::new());
 
-                    // let output = aig.and(default_input.lit(), !side_input.lit());
-                    
-                    // node_map.insert(index, Data {
-                    //     default_input: Input::Binary(default_input),
-                    //     side_input: Input::Binary(side_input),
-                    //     output: DOutput::Binary(output),
-                    // });
+                    let mut start = 0;
+                    if let Some(far_input) = far_input {
+                        start = 14;
 
-                    let default_inputs = [(); 4].map(|_| aig.local_input());
-                    let side_inputs = [(); 4].map(|_| aig.local_input());
+                        if far_input > 0 {
+                            // TODO: this might not output to all the lower signal strengths make sure it is correct
+                            let far_input = far_input as usize - 1;
+                            match mode {
+                                ComparatorMode::Compare => {
+                                    let signal = !default_inputs[14].lit();
+                                    let block = aig.ors(&side_inputs.clone().map(|n| n.lit())[far_input+1..]);
+                                    let gate = aig.and(signal, !block);
+                                    outputs[far_input].push(gate);
+                                },
+                                ComparatorMode::Subtract => {
+                                    let signal = !default_inputs[14].lit();
+                                    for power_on_sides in 0..far_input {
+                                        let block = side_inputs[power_on_sides].lit();
+                                        let gate = aig.and(signal, !block);
+                                        outputs[far_input-power_on_sides].push(gate);
+                                    }
+                                },
+                            }
+                        }
+                    }
+                    for input_strength in start..15 {    
+                        match mode {
+                            ComparatorMode::Compare => {
+                                let signal = default_inputs[input_strength].lit();
+                                let block = aig.ors(&side_inputs.clone().map(|n| n.lit())[input_strength+1..]);
+                                let gate = aig.and(signal, !block);
+                                outputs[input_strength].push(gate);
+                            },
+                            ComparatorMode::Subtract => {
+                                let signal = default_inputs[input_strength].lit();
+                                for power_on_sides in 0..input_strength {
+                                    let block = side_inputs[power_on_sides].lit();
+                                    let gate = aig.and(signal, !block);
+                                    outputs[input_strength-power_on_sides].push(gate);
+                                }
+                            },
+                        }
+                    }
 
-                    let (outputs, carry) = aigrs::components::const_sub(&mut aig,
-                        [0, 1, 2, 3].map(|i| default_inputs[i].lit()),
-                        [0, 1, 2, 3].map(|i| side_inputs[i].lit()),
-                    );
-                    
+                    let outputs = outputs.map(|output| {
+                        let output = aig.ors(&output);
+                        aig.latch2(output)
+                    });
+
                     node_map.insert(index, Data {
                         default_input: Input::Hex(default_inputs),
                         side_input: Input::Hex(side_inputs),
@@ -191,7 +226,7 @@ impl<W: World> Pass<W> for ExportAig {
 
         {
             let g = petgraph::dot::Dot::new(&aig.g);
-            let mut f = File::create("target/graph0.dot").unwrap();
+            let mut f = BufWriter::new(File::create("target/graph0.dot").unwrap());
             writeln!(f, "{:?}", g).unwrap();
         }
 
@@ -211,11 +246,6 @@ impl<W: World> Pass<W> for ExportAig {
             }
 
             println!("{:?} {:?} {:?}", node, graph[node].ty, data);
-
-            fn stuffs() {
-
-            }
-
             for (data_input, inputs) in [
                 (data.default_input.clone(), default_inputs),
                 (data.side_input.clone(), side_inputs)
@@ -230,31 +260,48 @@ impl<W: World> Pass<W> for ExportAig {
                                 DOutput::None => aig.f(),
                                 DOutput::Binary(lit) => lit,
                                 DOutput::Hex(lits) => {
-                                    let ss = aigrs::components::const_word(&mut aig, ss as usize);
-                                    let (_, on) = aigrs::components::const_sub(&mut aig, lits, ss);
-                                    on
+                                    if ss < 15 {
+                                        aig.ors(&lits[ss as usize..])
+                                    } else {
+                                        aig.f()
+                                    }
                                 }
                             }                            
                         }).collect();
                         let inputs = aig.ors(&inputs);
-                        aig.replace_input(input, inputs);
+                        aig.replace_node(input, inputs);
                     },
                     Input::Hex(input) => {
-                        let inputs: Vec<[AigLit; 4]> = inputs.iter().copied().map(|(input, ss)| {
+                        let inputs: Vec<[AigLit; 15]> = inputs.iter().copied().map(|(input, ss)| {
+                            let mut inputs = [aig.f(); 15];
                             match input {
-                                DOutput::None => aigrs::components::const_word(&mut aig, 0),
+                                DOutput::None => {},
                                 DOutput::Binary(lit) => {
-                                    let ss = aigrs::components::const_word(&mut aig, 15 - ss as usize);
-                                    let zero = aigrs::components::const_word(&mut aig, 0);
-                                    aigrs::components::const_mux(&mut aig, lit, ss, zero)
+                                    for i in 0..15-ss as usize {
+                                        inputs[i] = lit;
+                                    }
                                 },
-                                DOutput::Hex(lits) => lits
-                            }                            
+                                DOutput::Hex(lits) => {
+                                    for i in 0..15-ss as usize {
+                                        inputs[i] = lits[i + ss as usize];
+                                    }
+                                }
+                            }
+                            inputs                     
                         }).collect();
 
-                        let inputs = aigrs::components::max_tree(&mut aig, &inputs);
+                        let mut i = 0;
+                        let inputs = [(); 15].map(|_| {
+                            let mut arr = Vec::with_capacity(inputs.len());
+                            for input in inputs.iter() {
+                                arr.push(input[i]);
+                            }
+                            let or = aig.ors(&arr);
+                            i += 1;
+                            or
+                        });
                         for (old, new) in input.into_iter().zip(inputs) {
-                            aig.replace_input(old, new);
+                            aig.replace_node(old, new);
                         }
                     },
                 }
@@ -262,107 +309,39 @@ impl<W: World> Pass<W> for ExportAig {
         } 
 
         for node in aig.g.node_indices() {
-            println!("{:?} {:?}", node, aig.g[node]);
+            
             if  aig.g[node] == AigNodeTy::Input {
+                assert_eq!(aig.g.edges_directed(node, Incoming).count(), 0);
                 continue;
             }
 
             if aig.g[node] == AigNodeTy::And {
-                // assert_eq!(aig.g.edges_directed(node, Incoming).count(), 2);
+                assert_eq!(aig.g.edges_directed(node, Incoming).count(), 2);
                 continue;
             }
 
-            // assert_eq!(aig.g.edges_directed(node, Incoming).count(), 1)
+            assert_eq!(aig.g.edges_directed(node, Incoming).count(), 1)
         }
-
-        // 'outer:
-        // loop {
-        //     for node in aig.g.node_indices() {
-        //         if  aig.g[node] != AigNodeTy::And {
-        //             continue;
-        //         }
-        //         let mut input_latches = aig.g.edges_directed(node, Incoming);
-        //         let input_latches = [input_latches.next().unwrap(), input_latches.next().unwrap()];
-
-        //         if !input_latches.iter().all(|latch| aig.g[latch.source()] == AigNodeTy::Latch) {
-        //             continue;
-        //         }
-
-                
-        //         let inputs = input_latches.map(|latch| {
-        //             let input = aig.g.edges_directed(latch.source(), Incoming).next().unwrap();
-        //             (input.source(), latch.weight() ^ input.weight())
-        //         });
-
-        //         let outputs = aig.g.edges_directed(node, Outgoing)
-        //             .map(|output| output.id())
-        //             .collect::<Vec<_>>();
-
-        //         let input_latches = input_latches.map(|latch| latch.id());
-                
-                
-        //         for (input, inverted) in inputs {
-        //             aig.edge(input, node, inverted);
-        //         }
-                
-        //         let latch = aig.latch();
-                
-        //         aig.edge(node, latch, false);
-
-        //         for output in outputs.iter().copied() {
-        //             let (_, drain) = aig.g.edge_endpoints(output).unwrap();
-        //             let inverted = aig.g[output];
-        //             aig.edge(latch, drain, inverted);
-        //         }
-
-        //         for output in outputs {
-        //             aig.g.remove_edge(output);
-        //         }
-
-        //         for latch in input_latches {
-        //             aig.g.remove_edge(latch);
-        //         }
-                
-        //         continue 'outer
-        //     }
-
-        //     break;
-        // }
-
-        // 'outer:
-        // loop {
-        //     for node in aig.g.node_indices() {
-        //         match aig.g[node] {
-        //             AigNodeTy::And | AigNodeTy::Latch => {
-        //                 if aig.g.edges_directed(node, Outgoing).next().is_some() {
-        //                     continue;
-        //                 }
-        //                 aig.g.remove_node(node);
-        //                 continue 'outer;
-        //             },
-        //             _ => {}
-        //         }
-        //     }
-        //     break;
-        // }
 
         dbg!();
 
         {
             let g = petgraph::dot::Dot::new(&aig.g);
-            let mut f = File::create("target/graph.dot").unwrap();
+            let mut f = BufWriter::new(File::create("target/graph.dot").unwrap());
             writeln!(f, "{:?}", g).unwrap();
         }
 
         aig.gc();
 
+        dbg!();
+
         {
             let g = petgraph::dot::Dot::new(&aig.g);
-            let mut f = File::create("target/graphgc.dot").unwrap();
+            let mut f = BufWriter::new(File::create("target/graphgc.dot").unwrap());
             writeln!(f, "{:?}", g).unwrap();
         }
         {
-            let mut f = File::create("target/graph.aig").unwrap();
+            let mut f = BufWriter::new(File::create("target/graph.aig").unwrap());
             aig.serialize(&mut f).unwrap();
         }
 

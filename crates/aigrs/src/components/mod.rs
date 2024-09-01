@@ -86,6 +86,7 @@ pub fn min_tree<const N: usize>(network: &mut Netw, inputs: &[[Signal; N]]) -> [
     min(network, left, right)
 }
 
+
 pub fn const_word<const N: usize>(network: &mut Netw, mut x: usize) -> [Signal; N] {
     let mut i = N;
     [(); N].map(|_| {
@@ -93,6 +94,15 @@ pub fn const_word<const N: usize>(network: &mut Netw, mut x: usize) -> [Signal; 
         i -= 1;
         x
     })
+}
+
+pub fn const_ss(network: &mut Netw, ss: usize) -> [Signal; 15] {
+    let mut i = 0;
+    [(); 15].map(|_| {
+        i += 1;
+        let x = network.c(ss == i);
+        x
+    }) 
 }
 
 pub fn const_mux<const N: usize>(network: &mut Netw, mux: Signal, a: [Signal; N], b: [Signal; N]) -> [Signal; N] {

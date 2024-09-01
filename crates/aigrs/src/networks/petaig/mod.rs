@@ -1,3 +1,4 @@
+use std::time::Instant;
 use std::usize;
 
 use petgraph::{graph, Direction};
@@ -16,12 +17,21 @@ type AigIndex = petgraph::stable_graph::NodeIndex<u32>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AigNodeTy {
-    And, Input, Output, Latch, LocalInput
+    And, Input, Output, Latch, LocalInput, False
 }
 
 
 #[derive(Debug, Clone, Copy)]
 pub struct AigLit(AigIndex, bool);
+
+impl AigLit {
+    pub fn index(&self) -> AigIndex {
+        self.0
+    }
+    pub fn sign(&self) -> bool {
+        self.1
+    }
+}
 
 impl std::ops::Not for AigLit {
     type Output = Self;
@@ -84,7 +94,7 @@ impl Aig {
     pub fn new() -> Self {
         let mut g = PAig::new();
 
-        let f = g.add_node(AigNodeTy::Input);
+        let f = g.add_node(AigNodeTy::False);
 
         Self { g, f }
     }
@@ -134,17 +144,21 @@ impl Aig {
         self.g.add_edge(lit.0, drain.0, lit.1);
     }
 
-    pub fn replace_input(&mut self, input: Node, lit: AigLit) {
-        let outputs = self.g.edges_directed(input.0, Outgoing)
+    pub fn replace_node(&mut self, old: Node, new: AigLit) {
+        let outputs = self.g.edges_directed(old.0, Outgoing)
         .map(|edge| {
                 AigLit(edge.target(), *edge.weight())
             }).collect::<Vec<_>>();
         
         for output in outputs {
-            self.g.add_edge(lit.0, output.0, lit.1 ^ output.1);
+            self.g.add_edge(new.0, output.0, new.1 ^ output.1);
         }
         
-        self.g.remove_node(input.0);
+        self.g.remove_node(old.0);
+    }
+
+    fn replace_internal(&mut self, old: petgraph::prelude::NodeIndex, new: AigLit) {
+        self.replace_node(Node(old), new);
     }
 
     pub fn andx(&mut self, a: AigLit, b: AigLit, inv: bool) -> AigLit {
@@ -198,7 +212,15 @@ impl Aig {
 
     pub fn gc(&mut self) {
         let mut changed = true;
-        while changed {
+        let mut i = 0;
+        
+        while changed && i < 1_000_000_000 {
+            i += self.g.node_bound();
+            println!("bound {} {}", i, self.g.node_bound());
+            let start = Instant::now();
+
+
+            let mut j = 0;
             changed = false;
 
             for id in 0..self.g.node_bound() {
@@ -206,47 +228,75 @@ impl Aig {
                 if !self.g.contains_node(id) {
                     continue;
                 }
-                if self.g[id] != AigNodeTy::And {
+                if self.g[id] != AigNodeTy::And && self.g[id] != AigNodeTy::Latch {
                     continue;
                 }
                 
                 if self.g.edges_directed(id, Direction::Outgoing).next().is_none() {
                     self.g.remove_node(id);
                     changed = true;
-                    continue;;
+                    j += 1;
+                    continue;
                 }
-
+                
                 let mut inputs = self.g.edges_directed(id, Direction::Incoming);
-                let a = inputs.next().unwrap();
-                let b = inputs.next().unwrap();
+                let mut a = inputs.next().unwrap();
 
-                if a.source() == b.source() {
-                    let outputs =  self.g.edges_directed(id, Direction::Outgoing)
-                        .map(|edge| (edge.target().id(), *edge.weight()))
-                        .collect::<Vec<_>>();
-
-                    let equal_weights = a.weight() == b.weight();
-                    if equal_weights {
-                        let src = a.source();
-                        let weight = *a.weight();
-                        for (output, output_weight) in outputs {
-                            self.g.add_edge(src, output, weight ^ output_weight);
-                        }
-                    } else {
-                        for (output, output_weight) in outputs {
-                            self.g.add_edge(self.f, output, output_weight);
-                        }
+                if a.source() == id {
+                    continue;
+                }
+                
+                if self.g[id] == AigNodeTy::Latch {
+                    assert!(inputs.next().is_none());
+                    if a.source() == self.f {
+                        self.replace_internal(id, AigLit(a.source(), *a.weight()));
+                        changed = true;
+                        j += 1;
+                        continue;
                     }
-
-                    self.g.remove_node(id);
-                    changed = true;
-                    continue;;
                 }
 
+                if self.g[id] != AigNodeTy::And {
+                    continue;
+                }
+                let mut b = inputs.next().unwrap();
+                assert!(inputs.next().is_none());
+
+                if b.source() == id {
+                    continue;
+                }
+
+                if b.source() == self.f {
+                    std::mem::swap(&mut a, &mut b);
+                }
+                
+                
+
+                if a.source() == self.f {
+                    if *a.weight() {
+                        self.replace_internal(id, AigLit(b.source(), *b.weight()));
+                    } else {
+                        self.replace_internal(id, self.f());
+                    }
+                    changed = true;
+                    j += 1;
+                    continue;
+                }
+
+                if a.source() == b.source(){
+                    if a.weight() == b.weight() {
+                        self.replace_internal(id, AigLit(a.source(), *a.weight()));
+                    } else {
+                        self.replace_internal(id, self.f());
+                    }
+                    changed = true;
+                    j += 1;
+                    continue;
+                }
             }
+            let dt = start.elapsed();
+            println!("should remove {} in {:?}", j, dt);
         }
-
-
     }
 
     pub fn serialize<W: std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
@@ -262,7 +312,7 @@ impl Aig {
                 AigNodeTy::And => {
                     gates.push(id);
                 },
-                AigNodeTy::Input | AigNodeTy::LocalInput => {
+                AigNodeTy::Input | AigNodeTy::LocalInput | AigNodeTy::False => {
                     map.insert(id, (node, inputs.len()));
                     inputs.push(id);
                 }
@@ -309,12 +359,14 @@ impl Aig {
             map.insert(gate, (AigNodeTy::And, index));
         }
 
+        // println!("{:#?}\n\n{:#?}\n\n{:#?}\n\n{:#?}", inputs, latches, gates, outputs);
+
         writeln!(w, "aig {} {} {} {} {}", inputs.len()-1+latches.len()+gates.len(), inputs.len()-1, latches.len(), outputs.len(), gates.len())?;
 
         let get_num_n = |id: AigIndex| {
             let &(node, index) = map.get(&id).unwrap();
             let offset = match node {
-                AigNodeTy::Input | AigNodeTy::LocalInput => 0,
+                AigNodeTy::Input | AigNodeTy::LocalInput | AigNodeTy::False => 0,
                 AigNodeTy::Latch => inputs.len(),
                 AigNodeTy::And => inputs.len() + latches.len(),
                 AigNodeTy::Output => panic!("output has no literal"),
@@ -370,8 +422,7 @@ impl Aig {
 
             write_var_int(delta0, w)?;
             write_var_int(delta1, w)?;
-            println!("{} {} {} {}, {} {}", lhs/2, lhs, rhs0, rhs1, delta0, delta1);
-
+            // println!("{} {} {} {}, {} {}", lhs/2, lhs, rhs0, rhs1, delta0, delta1);
         }
         
         Ok(())

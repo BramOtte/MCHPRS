@@ -7,7 +7,7 @@ impl DirectBackend {
         node.pending_tick = false;
 
         match node.ty {
-            NodeType::Repeater { delay, .. } => {
+            NodeType::Repeater { delay, facing_diode } => {
                 if node.locked {
                     return;
                 }
@@ -17,12 +17,18 @@ impl DirectBackend {
                     self.set_node(node_id, false, 0);
                 } else if !node.powered {
                     if !should_be_powered {
+                        let priority = if facing_diode {
+                            TickPriority::Highest
+                        } else {
+                            TickPriority::Higher
+                        };
+                        
                         schedule_tick(
                             &mut self.scheduler,
                             node_id,
                             node,
                             delay as usize,
-                            TickPriority::Higher,
+                            priority,
                         );
                     }
                     self.set_node(node_id, true, 15);

@@ -1,4 +1,5 @@
 pub mod direct;
+pub mod threaded;
 
 use std::sync::Arc;
 
@@ -36,8 +37,10 @@ pub trait JITBackend {
 }
 
 use direct::DirectBackend;
+use threaded::ThreadedBackend;
 
 #[enum_dispatch(JITBackend)]
 pub enum BackendDispatcher {
     DirectBackend,
+    ThreadedBackend
 }

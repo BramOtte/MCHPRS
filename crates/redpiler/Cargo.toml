@@ -17,3 +17,4 @@ itertools = { workspace = true }
 rustc-hash = { workspace = true }
 smallvec = { workspace = true }
 enum_dispatch = { workspace = true }
+rayon = "1.10.0"

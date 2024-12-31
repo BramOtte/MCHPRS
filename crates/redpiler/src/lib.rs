@@ -57,6 +57,7 @@ pub struct CompilerOptions {
 pub enum BackendVariant {
     #[default]
     Direct,
+    Threaded,
 }
 
 impl CompilerOptions {
@@ -74,6 +75,7 @@ impl CompilerOptions {
                     "--wire-dot-out" => co.wire_dot_out = true,
                     "--print-after-all" => co.print_after_all = true,
                     "--print-before-backend" => co.print_before_backend = true,
+                    "--threaded" => co.backend_variant = BackendVariant::Threaded,
                     // FIXME: use actual error handling
                     _ => warn!("Unrecognized option: {}", option),
                 }
@@ -86,6 +88,7 @@ impl CompilerOptions {
                         "i" => co.io_only = true,
                         "u" => co.update = true,
                         "d" => co.wire_dot_out = true,
+                        "t" => co.backend_variant = BackendVariant::Threaded,
                         // FIXME: use actual error handling
                         _ => warn!("Unrecognized option: -{}", c),
                     }
@@ -147,12 +150,16 @@ impl Compiler {
             Some(BackendDispatcher::DirectBackend(_)) => {
                 options.backend_variant != BackendVariant::Direct
             }
+            Some(BackendDispatcher::ThreadedBackend(_)) => {
+                options.backend_variant != BackendVariant::Threaded
+            }
             None => true,
         };
         if replace_jit {
             debug!("Switching jit backend to {:?}", options.backend_variant);
             let jit = match options.backend_variant {
                 BackendVariant::Direct => BackendDispatcher::DirectBackend(Default::default()),
+                BackendVariant::Threaded => BackendDispatcher::ThreadedBackend(Default::default()),
             };
             self.use_jit(jit);
         }

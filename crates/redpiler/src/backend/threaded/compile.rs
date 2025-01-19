@@ -1,6 +1,6 @@
 use crate::backend::threaded::node::Group;
 use crate::backend::threaded::TickScheduler;
-use crate::compile_graph::{CompileGraph, LinkType, NodeIdx};
+use crate::compile_graph::{self, CompileGraph, LinkType, NodeIdx};
 use crate::{CompilerOptions, TaskMonitor};
 use itertools::Itertools;
 use mchprs_blocks::blocks::{Block, Instrument};
@@ -193,6 +193,18 @@ pub fn compile(
             let nodeid = nodeids[processed];
             processed += 1;
             
+            // Add inputs of repeaters to the same group because repeaters can schedule their own ticks
+            if matches!(graph[nodeid].ty, compile_graph::NodeType::Repeater { .. }) {
+                for input in graph.neighbors_directed(nodeid, Incoming) {
+                    if visited[input.index()] {
+                        continue;
+                    }
+                    visited[input.index()] = true;
+                    
+                    nodeids.push(input);
+                }
+            }
+
             for output in graph.neighbors_directed(nodeid, Outgoing) {
                 for input in graph.neighbors_directed(output, Incoming) {
                     if visited[input.index()] {
@@ -283,4 +295,6 @@ pub fn compile(
     if options.export_dot_graph {
         std::fs::write("backend_graph.dot", format!("{}", backend)).unwrap();
     }
+
+    println!("group count {}", backend.groups.groups.len());
 }

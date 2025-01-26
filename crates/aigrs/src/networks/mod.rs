@@ -31,6 +31,10 @@ pub trait CreateOr: Network {
     fn create_or(&mut self, a: Self::Sig, b: Self::Sig) -> Self::Sig;
 }
 
+pub trait CreateOrs: Network {
+    fn create_ors<T: ExactSizeIterator<Item=Self::Sig>>(&mut self, inputs: T) -> Self::Sig;
+}
+
 pub trait CreateLatch: Network {
     fn create_latch(&mut self) -> (Self::Node, Self::Sig);
 }

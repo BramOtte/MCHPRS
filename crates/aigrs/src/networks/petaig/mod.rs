@@ -6,6 +6,7 @@ use petgraph::stable_graph::EdgeReference;
 use petgraph::visit::{EdgeRef, IntoEdgesDirected, IntoNodeReferences, NodeIndexable, NodeRef};
 use petgraph::Direction::{Incoming, Outgoing};
 
+use super::aiger::Aiger;
 use super::andtree::And;
 use super::Network;
 
@@ -85,6 +86,15 @@ pub struct Aig {
     f: AigIndex,
 }
 
+#[derive(Debug, Default)]
+pub struct AigSize {
+    pub pi: usize,
+    pub po: usize,
+    pub ands: usize,
+    pub latches: usize,
+}
+
+
 impl Network for Aig {
     type Sig = AigLit;
     type Node = Node;
@@ -97,6 +107,21 @@ impl Aig {
         let f = g.add_node(AigNodeTy::False);
 
         Self { g, f }
+    }
+
+    pub fn size(&self) -> AigSize {
+        let mut size = AigSize::default();
+        for node in self.g.node_weights() {
+            match node {
+                AigNodeTy::And => size.ands += 1,
+                AigNodeTy::Input => size.pi += 1,
+                AigNodeTy::Output => size.po += 1,
+                AigNodeTy::Latch => size.latches += 1,
+                AigNodeTy::LocalInput => {},
+                AigNodeTy::False => {},
+            }
+        }
+        size
     }
 
     pub fn c(&self, sign: bool) -> AigLit {
@@ -299,7 +324,66 @@ impl Aig {
         }
     }
 
-    pub fn serialize<W: std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
+    pub fn to_aig(&self) -> Aiger {
+        let mut inputs = Vec::<AigIndex>::new();
+        let mut latches = Vec::<AigIndex>::new();
+        let mut outputs = Vec::<AigIndex>::new();
+        let mut gates = Vec::<AigIndex>::new();
+        
+        let mut map = std::collections::HashMap::<AigIndex, (AigNodeTy, usize)>::new();
+
+        for (id, &node) in self.g.node_references() {
+            match node {
+                AigNodeTy::And => {
+                    gates.push(id);
+                },
+                AigNodeTy::Input | AigNodeTy::LocalInput | AigNodeTy::False => {
+                    map.insert(id, (node, inputs.len()));
+                    inputs.push(id);
+                }
+                AigNodeTy::Output => {
+                    map.insert(id, (node, outputs.len()));
+                    outputs.push(id);
+                },
+                AigNodeTy::Latch => {
+                    map.insert(id, (node, latches.len()));
+                    latches.push(id);
+                },
+            }
+        }
+
+        {
+            let mut stack = 
+                inputs.iter().copied()
+                .chain(
+                    latches.iter().copied()
+                )    
+                .map(|node| (node, 1))
+                .collect::<Vec<_>>();
+
+            let mut depth_map = vec![0; self.g.node_bound()];
+
+            while let Some((node, depth)) = stack.pop() {
+                for neighbor in self.g.neighbors_directed(node, Outgoing) {
+                    if self.g[neighbor] != AigNodeTy::And {
+                        continue;
+                    }
+                    if depth_map[neighbor.index()] >= depth {
+                        continue;
+                    }
+                    depth_map[neighbor.index()] = depth;
+                    stack.push((neighbor, depth+1));
+                }
+            }
+
+            // TODO: use breadth first search so we don't need to sort 
+            gates.sort_by_key(|&node| depth_map[node.index()]);
+        }
+
+        todo!()
+    }
+
+    pub fn serialize<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
         let mut inputs = Vec::<AigIndex>::new();
         let mut latches = Vec::<AigIndex>::new();
         let mut outputs = Vec::<AigIndex>::new();

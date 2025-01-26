@@ -9,7 +9,6 @@ mod identify_nodes;
 mod input_search;
 mod prune_orphans;
 mod unreachable_output;
-mod aig;
 
 use mchprs_world::World;
 
@@ -37,7 +36,6 @@ pub const fn make_default_pass_manager<'w, W: World>() -> PassManager<'w, W> {
         &coalesce::Coalesce,
         &prune_orphans::PruneOrphans,
         &export_graph::ExportGraph,
-        &aig::ExportAig,
     ])
 }
 

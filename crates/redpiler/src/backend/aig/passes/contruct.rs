@@ -3,6 +3,7 @@ use std::io::{BufWriter, Write};
 use std::fs::File;
 use std::ops::Not;
 use std::path::Display;
+use std::sync::Arc;
 
 use mchprs_blocks::blocks::ComparatorMode;
 use petgraph::data::Build;
@@ -12,10 +13,9 @@ use petgraph::{stable_graph, Directed, Direction};
 use petgraph::Direction::{Incoming, Outgoing};
 use rustc_hash::FxHashMap;
 
-use crate::compile_graph::{self, LinkType, NodeType};
-use mchprs_world::World;
-
-use super::Pass;
+use crate::compile_graph::{self, CompileGraph, LinkType, NodeType};
+use crate::{CompilerOptions, TaskMonitor};
+use mchprs_world::{TickEntry, World};
 
 use aigrs::networks::petaig::*;
 
@@ -57,15 +57,17 @@ impl Data {
     }
 }
 
-pub struct ExportAig;
+#[derive(Default)]
+pub struct ConstructAig;
 
-impl<W: World> Pass<W> for ExportAig {
-    fn run_pass(
-        &self,
-        graph: &mut crate::compile_graph::CompileGraph,
-        options: &crate::CompilerOptions,
-        input: &crate::CompilerInput<'_, W>,
-    ) {
+impl ConstructAig {
+    pub fn compile(
+        &mut self,
+        graph: CompileGraph,
+        ticks: Vec<TickEntry>,
+        options: &CompilerOptions,
+        monitor: Arc<TaskMonitor>,
+    ) -> aigrs::networks::petaig::Aig {
         println!("export AIG");
         let mut node_map: FxHashMap::< petgraph::prelude::NodeIndex, Data> = FxHashMap::default();
         let mut aig = Aig::new();
@@ -99,8 +101,10 @@ impl<W: World> Pass<W> for ExportAig {
                         side_input = Input::Binary(side);
                     }
 
-                    
-                    if delay <= 1 {
+                    let no_pulse_extension = true;
+
+
+                    if delay <= 1 || no_pulse_extension {
                         aig.connect_drain(latch_start, i0);
                     } else {
                         // s1 = (s & !o) | (i & !(!s & o))
@@ -325,28 +329,31 @@ impl<W: World> Pass<W> for ExportAig {
 
         dbg!();
 
-        {
-            let g = petgraph::dot::Dot::new(&aig.g);
-            let mut f = BufWriter::new(File::create("target/graph.dot").unwrap());
-            writeln!(f, "{:?}", g).unwrap();
-        }
+        // {
+        //     let g = petgraph::dot::Dot::new(&aig.g);
+        //     let mut f = BufWriter::new(File::create("target/graph.dot").unwrap());
+        //     writeln!(f, "{:?}", g).unwrap();
+        // }
 
         aig.gc();
 
         dbg!();
 
-        {
-            let g = petgraph::dot::Dot::new(&aig.g);
-            let mut f = BufWriter::new(File::create("target/graphgc.dot").unwrap());
-            writeln!(f, "{:?}", g).unwrap();
-        }
-        {
-            let mut f = BufWriter::new(File::create("target/graph.aig").unwrap());
-            aig.serialize(&mut f).unwrap();
-        }
+        // {
+        //     let g = petgraph::dot::Dot::new(&aig.g);
+        //     let mut f = BufWriter::new(File::create("target/graphgc.dot").unwrap());
+        //     writeln!(f, "{:?}", g).unwrap();
+        // }
+        // {
+        //     let mut f = BufWriter::new(File::create("target/graph.aig").unwrap());
+        //     aig.serialize(&mut f).unwrap();
+        // }
+
+        
 
 
         dbg!("done");
+        aig
     }
 
     fn status_message(&self) -> &'static str {

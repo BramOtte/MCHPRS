@@ -1,4 +1,5 @@
 pub mod direct;
+pub mod aig;
 
 use std::sync::Arc;
 

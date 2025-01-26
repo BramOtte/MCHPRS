@@ -75,6 +75,10 @@ impl<W: World> Pass<W> for ConstantCoalesce {
         }
     }
 
+    fn should_run(&self, options: &CompilerOptions) -> bool {
+        false
+    }
+
     fn status_message(&self) -> &'static str {
         "Coalescing constants"
     }

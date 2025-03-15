@@ -6,6 +6,8 @@ use petgraph::stable_graph::EdgeReference;
 use petgraph::visit::{EdgeRef, IntoEdgesDirected, IntoNodeReferences, NodeIndexable, NodeRef};
 use petgraph::Direction::{Incoming, Outgoing};
 
+use crate::networks::aiger;
+
 use super::aiger::Aiger;
 use super::andtree::And;
 use super::Network;
@@ -322,6 +324,121 @@ impl Aig {
             let dt = start.elapsed();
             println!("should remove {} in {:?}", j, dt);
         }
+    }
+
+
+    pub fn to_aiger(&self) -> aiger::Aiger {
+        use petgraph::prelude::*;
+        use aiger::{And, AigLit};
+
+        let size = self.size();
+
+        let ci = size.pi + size.latches;
+
+        let mut aig = aiger::Aiger {
+            start_latches: size.pi + 1,
+            start_gates: ci + 1,
+            ands: Vec::with_capacity(ci + size.ands + 1),
+            outputs: Vec::with_capacity(size.latches + size.po),
+        };
+
+        // unsafe  {
+        //     aig.ands.set_len(ci + 1);
+        // }
+        aig.ands.push(And(AigLit::FALSE, AigLit::FALSE));
+
+        let mut visited: Vec<AigLit> = vec![AigLit::FALSE; self.g.node_bound()];
+        let mut input_count: Vec<u32> = vec![0; self.g.node_bound()];
+
+        let mut queue: Vec<NodeIndex> = self.g.node_indices()
+            .filter(|&node| matches!(self.g[node], AigNodeTy::Input))
+            .chain(
+                self.g.node_indices()
+                    .filter(|&node| matches!(self.g[node], AigNodeTy::Latch))
+            )
+            .collect::<Vec<_>>();
+        let mut next_queue: Vec<NodeIndex> = Vec::new();
+
+        let mut outputs: Vec<NodeIndex> = Vec::new();
+
+        while queue.len() > 0 {
+            for node in queue.drain(..) {
+                
+                //  = aig.ands.len() as u32;
+
+                let mut inputs = self.g.edges_directed(node, Incoming);
+                match self.g[node] {
+                    AigNodeTy::And => {
+                        let a = inputs.next().unwrap();
+                        let b = inputs.next().unwrap();
+
+                        let a = AigLit::new(a.source().index(), *a.weight());
+                        let b = AigLit::new(b.source().index(), *b.weight());
+                        
+                        visited[node.index() as usize] = aig.and(a, b);
+                    },
+                    AigNodeTy::Input => {
+                        visited[node.index() as usize] = aig.input();
+                    },
+                    AigNodeTy::Latch => {
+                        visited[node.index() as usize] = aig.input();
+                        aig.start_latches -= 1;
+                        // aig.set_latch_count(latch_count);
+                    },
+                    AigNodeTy::Output => {
+                        outputs.push(node);
+                    },
+                    AigNodeTy::LocalInput => panic!("Should not contain local inputs please run gc"),
+                    AigNodeTy::False => {},
+                }
+
+                for output in self.g.neighbors_directed(node, Outgoing) {
+                    input_count[output.index()] += 1;
+                    let count = if matches!(self.g[output], AigNodeTy::And) {
+                        2
+                    } else {
+                        1
+                    };
+                    if count == input_count[output.index()] {
+                        next_queue.push(output);
+                    }
+                    assert!(count <= input_count[output.index()]);
+                }
+            }
+
+            std::mem::swap(&mut queue, &mut next_queue);
+        }
+        // let mut input_c = 0;
+        // let mut latch_c = aig.start_latches;
+        // let mut and_c = aig.start_gates;
+
+        // for node in input.g.node_indices() {
+        //     match input.g[node] {
+        //         AigNodeTy::And => {
+        //             let mut inputs = input.g.edges_directed(node, Incoming);
+        //             let a = inputs.next().unwrap();
+        //             let b = inputs.next().unwrap();
+
+        //             let a = AigLit::new(a.source().index(), *a.weight());
+        //             let b = AigLit::new(b.source().index(), *b.weight());
+
+
+        //             aig.and(a, b);
+        //             visited[node.index()] = and_c as u32;
+        //             and_c += 1
+        //         },
+        //         AigNodeTy::Input => {
+        //             visited[node.index()] = input_c;
+        //             input_c += 1;
+        //         },
+        //         AigNodeTy::Output => aig.outputs.push(AigLit::new(node.index(), false)),
+        //         AigNodeTy::Latch => todo!(),
+        //         AigNodeTy::LocalInput => todo!(),
+        //         AigNodeTy::False => todo!(),
+        //     }
+        // }
+
+        aig
     }
 
     pub fn to_aig(&self) -> Aiger {

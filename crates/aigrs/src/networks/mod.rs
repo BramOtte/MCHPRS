@@ -4,11 +4,11 @@ pub mod petaig;
 pub mod aiger;
 pub mod andtree;
 pub mod testnetwork;
-
+pub mod and;
 
 pub trait Network {
     type Node;
-    type Sig;
+    type Sig: Copy + Not;
 }
 
 pub trait CreateNew: Network {
@@ -37,4 +37,5 @@ pub trait CreateOrs: Network {
 
 pub trait CreateLatch: Network {
     fn create_latch(&mut self) -> (Self::Node, Self::Sig);
+    fn connect_latch(&mut self, latch: Self::Node);
 }

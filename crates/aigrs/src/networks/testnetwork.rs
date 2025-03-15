@@ -7,7 +7,7 @@ struct Test {
 #[derive(Debug)]
 struct TestNode(usize);
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct TestSignal(usize, bool);
 
 impl Not for TestSignal {

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::default;
 use std::io::{BufWriter, Write};
 use std::fs::File;
@@ -6,6 +7,7 @@ use std::path::Display;
 use std::sync::Arc;
 
 use mchprs_blocks::blocks::ComparatorMode;
+use mchprs_blocks::BlockPos;
 use petgraph::data::Build;
 use petgraph::graph::{EdgeIndex, EdgeReference, NodeIndex};
 use petgraph::visit::{EdgeRef, IntoEdgesDirected, IntoNodeReferences, NodeIndexable, NodeRef};
@@ -17,7 +19,7 @@ use crate::compile_graph::{self, CompileGraph, LinkType, NodeType};
 use crate::{CompilerOptions, TaskMonitor};
 use mchprs_world::{TickEntry, World};
 
-use aigrs::networks::petaig::*;
+use aigrs::networks::petaig::{self, *};
 
 #[derive(Debug, Clone)]
 enum Input {
@@ -68,6 +70,9 @@ impl ConstructAig {
         options: &CompilerOptions,
         monitor: Arc<TaskMonitor>,
     ) -> aigrs::networks::petaig::Aig {
+        let inputs: Vec<petaig::Node> = Vec::new();
+        let outputs: FxHashMap<petaig::Node, BlockPos> = FxHashMap::default();
+
         println!("export AIG");
         let mut node_map: FxHashMap::< petgraph::prelude::NodeIndex, Data> = FxHashMap::default();
         let mut aig = Aig::new();

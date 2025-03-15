@@ -6,6 +6,7 @@ use std::iter::Copied;
 use std::num::NonZero;
 use std::ops::{BitXor, Not};
 use std::rc::Rc;
+use super::Network;
 
 use petgraph::visit::{EdgeRef, IntoEdgesDirected, IntoNeighborsDirected, NodeIndexable};
 use petgraph::Direction::{Incoming, Outgoing};
@@ -24,7 +25,7 @@ impl AigLit {
         Self::new(0, sign)
     }
 
-    const fn new(index: usize, sign: bool) -> Self {
+    pub const fn new(index: usize, sign: bool) -> Self {
         Self(((index as u32) << 1) | sign as u32)
     }
 
@@ -152,8 +153,9 @@ impl Aiger {
     }
 
     pub fn input(&mut self) -> AigLit {
-        // debug_assert_eq!(self.ands.len(), 0);
+        debug_assert_eq!(self.start_latches, self.start_gates);
         self.start_latches += 1;
+        self.start_gates += 1;
         self.ands.push(And(AigLit::FALSE, AigLit::FALSE));
         AigLit::new(self.start_latches, false)
     }
@@ -281,118 +283,6 @@ impl Aiger {
         }
 
         forward
-    }
-
-    pub fn from_petaig(input: &petaig::Aig) -> Self {
-        use petgraph::prelude::*;
-        let size = input.size();
-
-        let ci = size.pi + size.latches;
-
-        let mut aig = Self {
-            start_latches: size.pi + 1,
-            start_gates: ci + 1,
-            ands: Vec::with_capacity(ci + size.ands + 1),
-            outputs: Vec::with_capacity(size.latches + size.po),
-        };
-
-        // unsafe  {
-        //     aig.ands.set_len(ci + 1);
-        // }
-        aig.ands.push(And(AigLit::FALSE, AigLit::FALSE));
-
-        let mut visited: Vec<AigLit> = vec![AigLit::FALSE; input.g.node_bound()];
-        let mut input_count: Vec<u32> = vec![0; input.g.node_bound()];
-
-        let mut queue: Vec<NodeIndex> = input.g.node_indices()
-            .filter(|&node| matches!(input.g[node], petaig::AigNodeTy::Input))
-            .chain(
-                input.g.node_indices()
-                    .filter(|&node| matches!(input.g[node], petaig::AigNodeTy::Latch))
-            )
-            .collect::<Vec<_>>();
-        let mut next_queue: Vec<NodeIndex> = Vec::new();
-
-        let mut outputs: Vec<NodeIndex> = Vec::new();
-
-        while queue.len() > 0 {
-            for node in queue.drain(..) {
-                
-                //  = aig.ands.len() as u32;
-
-                let mut inputs = input.g.edges_directed(node, Incoming);
-                match input.g[node] {
-                    petaig::AigNodeTy::And => {
-                        let a = inputs.next().unwrap();
-                        let b = inputs.next().unwrap();
-
-                        let a = AigLit::new(a.source().index(), *a.weight());
-                        let b = AigLit::new(b.source().index(), *b.weight());
-                        
-                        visited[node.index() as usize] = aig.and(a, b);
-                    },
-                    petaig::AigNodeTy::Input => {
-                        visited[node.index() as usize] = aig.input();
-                    },
-                    petaig::AigNodeTy::Latch => {
-                        visited[node.index() as usize] = aig.input();
-                        aig.start_latches -= 1;
-                        // aig.set_latch_count(latch_count);
-                    },
-                    petaig::AigNodeTy::Output => {
-                        outputs.push(node);
-                    },
-                    petaig::AigNodeTy::LocalInput => panic!("Should not contain local inputs please run gc"),
-                    petaig::AigNodeTy::False => {},
-                }
-
-                for output in input.g.neighbors_directed(node, Outgoing) {
-                    input_count[output.index()] += 1;
-                    let count = if matches!(input.g[output], petaig::AigNodeTy::And) {
-                        2
-                    } else {
-                        1
-                    };
-                    if count == input_count[output.index()] {
-                        next_queue.push(output);
-                    }
-                    assert!(count <= input_count[output.index()]);
-                }
-            }
-
-            std::mem::swap(&mut queue, &mut next_queue);
-        }
-        // let mut input_c = 0;
-        // let mut latch_c = aig.start_latches;
-        // let mut and_c = aig.start_gates;
-
-        // for node in input.g.node_indices() {
-        //     match input.g[node] {
-        //         petaig::AigNodeTy::And => {
-        //             let mut inputs = input.g.edges_directed(node, Incoming);
-        //             let a = inputs.next().unwrap();
-        //             let b = inputs.next().unwrap();
-
-        //             let a = AigLit::new(a.source().index(), *a.weight());
-        //             let b = AigLit::new(b.source().index(), *b.weight());
-
-
-        //             aig.and(a, b);
-        //             visited[node.index()] = and_c as u32;
-        //             and_c += 1
-        //         },
-        //         petaig::AigNodeTy::Input => {
-        //             visited[node.index()] = input_c;
-        //             input_c += 1;
-        //         },
-        //         petaig::AigNodeTy::Output => aig.outputs.push(AigLit::new(node.index(), false)),
-        //         petaig::AigNodeTy::Latch => todo!(),
-        //         petaig::AigNodeTy::LocalInput => todo!(),
-        //         petaig::AigNodeTy::False => todo!(),
-        //     }
-        // }
-
-        aig
     }
 }
 

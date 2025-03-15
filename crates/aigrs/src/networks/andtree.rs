@@ -1,10 +1,10 @@
 use std::ops::Not;
 
 #[derive(Debug, Clone, Copy)]
-pub struct False(bool);
+pub struct Const(bool);
 
-impl std::ops::Not for False {
-    type Output = False;
+impl std::ops::Not for Const {
+    type Output = Const;
 
     fn not(self) -> Self::Output {
         Self(!self.0)

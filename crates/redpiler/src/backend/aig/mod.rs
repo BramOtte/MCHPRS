@@ -62,8 +62,8 @@ impl JITBackend for AigBackend {
         monitor: Arc<TaskMonitor>,
     ) {
         let aig = passes::contruct::ConstructAig::default().compile(graph, ticks, options, monitor);
-        let aig = Aiger::from_petaig(&aig);
-        let state = StateB::new(&aig);
+        let aig = aig.to_aiger();
+        // let state = StateB::new(&aig);
         todo!()
     }
 

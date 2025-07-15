@@ -105,16 +105,14 @@ fn run_iteration(graph: &mut CompileGraph) -> usize {
 }
 
 pub fn coalesce(graph: &mut CompileGraph, node: NodeIdx, into: NodeIdx, extra_distance: u8) {
-    let mut walk_outgoing: petgraph::stable_graph::WalkNeighbors<u32> =
-        graph.neighbors_directed(node, Direction::Outgoing).detach();
-    while let Some(edge_idx) = walk_outgoing.next_edge(graph) {
-        let dest = graph.edge_endpoints(edge_idx).unwrap().1;
-        if !graph.contains_node(dest) {
-            continue;
-        }
-        let weight = graph.remove_edge(edge_idx).unwrap();
-        let ty = weight.ty;
-        let ss = weight.ss + extra_distance;
+    if node == into {
+        return;
+    }
+
+    let mut neighbors = graph.neighbors_directed(node, Direction::Outgoing).detach();
+    while let Some((edge, dest)) = neighbors.next(graph) {
+        let CompileLink { ty, ss } = graph[edge];
+        let ss = ss + extra_distance;
         if ss < 15 {
             graph.add_edge(into, dest, CompileLink::new(ty, ss));
         }

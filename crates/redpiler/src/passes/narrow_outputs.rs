@@ -35,6 +35,13 @@ fn remove_ss(values: u16, distance: u8) -> u16 {
 }
 
 #[inline(always)]
+fn or_possible(a: u16, b: u16) -> u16 {
+    let a_lsb = a & (u16::MAX - a);
+    let b_lsb = b & (u16::MAX - b);
+    (a | b) & (a_lsb - 1) & (b_lsb - 1)
+}
+
+#[inline(always)]
 fn calc_possible_inputs(graph: &CompileGraph, idx: NodeIdx) -> (u16, u16) {
     let node = &graph[idx];
     let mut def = 0;
@@ -47,9 +54,9 @@ fn calc_possible_inputs(graph: &CompileGraph, idx: NodeIdx) -> (u16, u16) {
         let val = graph[source].possible_outputs;
         let val = remove_ss(val, ss);
         if ty == LinkType::Default {
-            def |= val;
+            def = or_possible(def, val);
         } else {
-            side |= val;
+            side = or_possible(side, val);
         }
     }
 

@@ -27,12 +27,12 @@ impl<W: World> Pass<W> for ConstantFold2 {
 
         for i in 0..graph.node_bound() {
             let idx = NodeIdx::new(i);
-            if !graph.contains_node(idx) {
+            if idx == constant || !graph.contains_node(idx) {
                 continue;
             }
             let node = &graph[idx];
 
-            if node.possible_outputs.count_ones() != 1 {
+            if !node.is_removable() || node.possible_outputs.count_ones() != 1 {
                 continue;
             }
 

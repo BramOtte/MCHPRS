@@ -98,6 +98,18 @@ fn for_pos<W: World>(
         return;
     }
 
+    let possible_outputs: u16 = match ty {
+        // Inputs
+        NodeType::Button | NodeType::Lever | NodeType::PressurePlate => 1 | (1 << 15),
+        NodeType::Constant => 1 << state.output_strength,
+        // Outputs
+        NodeType::Trapdoor | NodeType::Lamp | NodeType::NoteBlock { .. } => 1,
+        // Hex components
+        NodeType::Comparator { .. } | NodeType::Wire => 0xffff,
+        // Binary components
+        NodeType::Repeater { .. } | NodeType::Torch => (1 << 15) | 1,
+    };
+
     let node_idx = graph.add_node(CompileNode {
         ty,
         block: Some((pos, id)),
@@ -106,6 +118,7 @@ fn for_pos<W: World>(
         is_input,
         is_output,
         annotations: Annotations::default(),
+        possible_outputs,
     });
     first_pass.insert(pos, node_idx);
 }

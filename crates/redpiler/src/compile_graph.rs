@@ -29,7 +29,13 @@ pub enum NodeType {
     },
 }
 
-#[derive(Debug, Clone, Default)]
+impl NodeType {
+    pub fn is_bool(&self) -> bool {
+        !matches!(self, NodeType::Wire | NodeType::Comparator { .. })
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct NodeState {
     pub powered: bool,
     pub repeater_locked: bool,
@@ -81,6 +87,9 @@ pub struct CompileNode {
     pub is_input: bool,
     pub is_output: bool,
     pub annotations: Annotations,
+
+    /// A bitset of the possible output signal strengths with 1 << N representing a signal strength of N
+    pub possible_outputs: u16,
 }
 
 impl CompileNode {

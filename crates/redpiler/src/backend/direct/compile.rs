@@ -68,7 +68,10 @@ fn compile_node(
     stats.side_link_count += side_input_count;
 
     use crate::compile_graph::NodeType as CNodeType;
-    let updates = if node.ty != CNodeType::Constant {
+
+    // Constant edges needlessly take up memory but are helpful for debugging
+    let remove_constant_links = false;
+    let updates = if !remove_constant_links || node.ty != CNodeType::Constant {
         graph
             .edges_directed(node_idx, Direction::Outgoing)
             .sorted_by_key(|edge| nodes_map[&edge.target()])

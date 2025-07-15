@@ -16,6 +16,7 @@ impl<W: World> Pass<W> for ConstantCoalesce {
             is_input: false,
             is_output: false,
             annotations: Default::default(),
+            possible_outputs: 1 << 15,
         });
 
         for i in 0..graph.node_bound() {

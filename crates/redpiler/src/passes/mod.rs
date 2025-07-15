@@ -1,13 +1,18 @@
+mod cancelling_comparator_edges;
 mod clamp_weights;
 mod coalesce;
+mod coalesce2;
 mod constant_coalesce;
 mod constant_fold;
+mod constant_fold2;
 mod dedup_links;
 mod export_graph;
 mod identify_nodes;
 mod input_search;
+mod narrow_outputs;
 mod prune_orphans;
 mod unreachable_output;
+mod unreachable_output2;
 
 use mchprs_world::World;
 
@@ -24,10 +29,11 @@ pub const fn make_default_pass_manager<'w, W: World>() -> PassManager<'w, W> {
         &input_search::InputSearch,
         &clamp_weights::ClampWeights,
         &dedup_links::DedupLinks,
-        &constant_fold::ConstantFold,
-        &unreachable_output::UnreachableOutput,
-        &constant_coalesce::ConstantCoalesce,
-        &coalesce::Coalesce,
+        &narrow_outputs::NarrowOutputs,
+        &constant_fold2::ConstantFold2,
+        &unreachable_output2::UnreachableOutput2,
+        &cancelling_comparator_edges::CancellingComparatorEdges,
+        &coalesce2::Coalesce2,
         &prune_orphans::PruneOrphans,
         &export_graph::ExportGraph,
     ])

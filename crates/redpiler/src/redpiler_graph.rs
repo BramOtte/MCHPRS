@@ -44,7 +44,7 @@ pub enum NodeType {
     NoteBlock,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct NodeState {
     pub powered: bool,
     pub repeater_locked: bool,

@@ -1,42 +1,9 @@
 mod common;
+use common::*;
 
-use common::{test_all_backends, BackendRunner, TestBackend, TestWorld};
-use mchprs_blocks::blocks::{Block, Lever, LeverFace, RedstoneRepeater};
-use mchprs_blocks::{BlockDirection, BlockPos};
-use mchprs_redpiler::BackendVariant;
-use mchprs_redstone::wire::make_cross;
+use mchprs_blocks::blocks::Block;
+use mchprs_blocks::BlockDirection;
 use mchprs_world::World;
-
-fn pos(x: i32, y: i32, z: i32) -> BlockPos {
-    BlockPos::new(x, y, z)
-}
-
-fn place_on_block(world: &mut TestWorld, block_pos: BlockPos, block: Block) {
-    world.set_block(block_pos - pos(0, 1, 0), Block::Sandstone {});
-    world.set_block(block_pos, block);
-}
-
-fn trapdoor() -> Block {
-    Block::IronTrapdoor {
-        facing: Default::default(),
-        half: Default::default(),
-        powered: false,
-    }
-}
-
-/// Creates a lever at `lever_pos` with a block of sandstone below it
-fn make_lever(world: &mut TestWorld, lever_pos: BlockPos) {
-    place_on_block(
-        world,
-        lever_pos,
-        Block::Lever {
-            lever: Lever {
-                face: LeverFace::Floor,
-                ..Default::default()
-            },
-        },
-    );
-}
 
 test_all_backends!(lever_on_off);
 fn lever_on_off(backend: TestBackend) {
@@ -128,13 +95,7 @@ fn torch_on_off(backend: TestBackend) {
 
     let mut world = TestWorld::new(1);
     make_lever(&mut world, lever_pos);
-    place_on_block(
-        &mut world,
-        pos(1, 1, 0),
-        Block::RedstoneWire {
-            wire: make_cross(0),
-        },
-    );
+    make_wire(&mut world, pos(1, 1, 0));
     place_on_block(&mut world, torch_pos, Block::RedstoneTorch { lit: true });
 
     let mut runner = BackendRunner::new(world, backend);
@@ -157,17 +118,7 @@ fn repeater_on_off(backend: TestBackend) {
     for delay in 1..=4 {
         let mut world = TestWorld::new(1);
         make_lever(&mut world, lever_pos);
-        place_on_block(
-            &mut world,
-            pos(1, 1, 0),
-            Block::RedstoneRepeater {
-                repeater: RedstoneRepeater {
-                    facing: BlockDirection::West,
-                    delay: delay as u8,
-                    ..Default::default()
-                },
-            },
-        );
+        make_repeater(&mut world, pos(1, 1, 0), delay as u8, BlockDirection::West);
         world.set_block(trapdoor_pos, trapdoor());
 
         let mut runner = BackendRunner::new(world, backend);
@@ -188,4 +139,46 @@ fn repeater_on_off(backend: TestBackend) {
         runner.check_powered_for(trapdoor_pos, true, delay);
         runner.check_block_powered(trapdoor_pos, false);
     }
+}
+
+test_all_backends!(wire_barely_reaches);
+fn wire_barely_reaches(backend: TestBackend) {
+    let lever_pos = pos(0, 1, 0);
+    let trapdoor_pos = pos(16, 1, 0);
+
+    let mut world = TestWorld::new(2);
+    make_lever(&mut world, lever_pos);
+    // 15 wire blocks between lever and trapdoor
+    for x in 1..=15 {
+        make_wire(&mut world, pos(x, 1, 0));
+    }
+    world.set_block(trapdoor_pos, trapdoor());
+
+    let mut runner = BackendRunner::new(world, backend);
+    runner.check_block_powered(trapdoor_pos, false);
+    runner.use_block(lever_pos);
+    runner.check_block_powered(trapdoor_pos, true);
+    runner.use_block(lever_pos);
+    runner.check_block_powered(trapdoor_pos, false);
+}
+
+test_all_backends!(wire_no_reach);
+fn wire_no_reach(backend: TestBackend) {
+    let lever_pos = pos(0, 1, 0);
+    let trapdoor_pos = pos(17, 1, 0);
+
+    let mut world = TestWorld::new(2);
+    make_lever(&mut world, lever_pos);
+    // 16 wire blocks between lever and trapdoor
+    for x in 1..=16 {
+        make_wire(&mut world, pos(x, 1, 0));
+    }
+    world.set_block(trapdoor_pos, trapdoor());
+
+    let mut runner = BackendRunner::new(world, backend);
+    runner.check_block_powered(trapdoor_pos, false);
+    runner.use_block(lever_pos);
+    runner.check_block_powered(trapdoor_pos, false);
+    runner.use_block(lever_pos);
+    runner.check_block_powered(trapdoor_pos, false);
 }

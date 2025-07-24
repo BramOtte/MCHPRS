@@ -10,7 +10,8 @@ module top (
     /*---------------------------------
                 PARAMETERS
     ---------------------------------*/
-    `include "parameters.vh"
+    parameter ROC_OUTPUTS;
+    parameter ROC_INPUTS;
 
     /*---------------------------------
              COMMAND CONTROLLER

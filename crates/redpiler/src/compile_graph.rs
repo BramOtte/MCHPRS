@@ -17,12 +17,7 @@ pub enum NodeType {
         mode: ComparatorMode,
         far_input: Option<u8>,
         facing_diode: bool,
-    },
-    FPGAComparator {
-        mode: ComparatorMode,
-        outputs: u16,
-        side: u16,
-        back: u16,
+        states: Option<u16>,
     },
     Lamp,
     Button,

@@ -106,7 +106,7 @@ fn for_pos<W: World>(
         // Outputs
         NodeType::Trapdoor | NodeType::Lamp | NodeType::NoteBlock { .. } => 1,
         // Hex components
-        NodeType::Comparator { .. } | NodeType::Wire | NodeType::FPGAComparator { .. } => 0xffff,
+        NodeType::Comparator { .. } | NodeType::Wire => 0xffff,
         // Binary components
         NodeType::Repeater { .. } | NodeType::Torch => (1 << 15) | 1,
     };
@@ -146,6 +146,7 @@ fn identify_block<W: World>(
                 facing_diode: mchprs_redstone::is_diode(
                     world.get_block(pos.offset(comparator.facing.opposite().block_face())),
                 ),
+                states: None,
             },
             NodeState::comparator(
                 comparator.powered,

@@ -116,7 +116,7 @@ fn calc_possible_outputs(graph: &CompileGraph, idx: NodeIdx) -> u16 {
                 (if (def & 1) != 0 { 1 << 15 } else { 0 })
                     | (if (def & POSITIVE) != 0 { 1 } else { 0 })
             }
-            NodeType::Comparator { mode, .. } | NodeType::FPGAComparator { mode, .. } => {
+            NodeType::Comparator { mode, .. } => {
                 let mut from_inputs = 0;
                 for def_ss in 0..=15u8 {
                     let ii = 1 << def_ss;

@@ -79,19 +79,13 @@ set_location_assignment PIN_{i_clk} -to i_clk\n",
             _ => ()
         };
 
-        let parameters = format!("
-parameter ROC_OUTPUTS = {output_cnt};
-parameter ROC_INPUTS  = {input_cnt};
-");
-
-        std::fs::write(prefix.join("../../../../src/parameters.vh"), parameters).unwrap();
-
         let out = Command::new("quartus_sh")
             .current_dir(prefix)
             .args(&["-t", "prj.tcl"])
             .output()
             .unwrap();
         println!("{}", String::from_utf8_lossy(&out.stdout));
+        eprintln!("{}", String::from_utf8_lossy(&out.stderr));
 
         return true;
     }
@@ -104,6 +98,7 @@ parameter ROC_INPUTS  = {input_cnt};
             .output()
             .unwrap();
         println!("{}", String::from_utf8_lossy(&out.stdout));
+        eprintln!("{}", String::from_utf8_lossy(&out.stderr));
         results
     }
 
@@ -115,6 +110,7 @@ parameter ROC_INPUTS  = {input_cnt};
             .output()
             .unwrap();
         println!("{}", String::from_utf8_lossy(&out.stdout));
+        eprintln!("{}", String::from_utf8_lossy(&out.stderr));
 
         results
     }

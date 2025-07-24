@@ -1,7 +1,5 @@
 use std::fs::File;
 use std::io::prelude::*;
-use std::env;
-use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
 use serde;
@@ -29,7 +27,7 @@ pub struct PinAssignments {
 
 impl DeviceConfig {
     pub fn create_project(&self, path: &Path, output_cnt: u32, input_cnt: u32) -> bool {
-
+        
         let mut tcl = format!(
         "package require ::quartus::project
 project_new -overwrite -revision RoC RoC 
@@ -81,39 +79,42 @@ set_location_assignment PIN_{i_clk} -to i_clk\n",
             _ => ()
         };
 
-        env::set_var("quartus_sh", r"C:\intelFPGA_lite\23.1std\quartus\bin64");
+        let parameters = format!("
+parameter ROC_OUTPUTS = {output_cnt};
+parameter ROC_INPUTS  = {input_cnt};
+");
 
-        let out = Command::new("cmd")
+        std::fs::write(prefix.join("../../../../src/parameters.vh"), parameters).unwrap();
+
+        let out = Command::new("quartus_sh")
             .current_dir(prefix)
-            .args(&["/C", r"C:\intelFPGA_lite\23.1std\quartus\bin64\quartus_sh -t prj.tcl"])
+            .args(&["-t", "prj.tcl"])
             .output()
             .unwrap();
-        println!("{:?}", String::from_utf8_lossy(&out.stdout));
+        println!("{}", String::from_utf8_lossy(&out.stdout));
 
         return true;
     }
 
     pub fn compile (&self, path: &Path) -> CompilerResults {
         let results = CompilerResults{state: true};
-        let out = Command::new("cmd")
+        let out = Command::new("quartus_sh")
             .current_dir(path)
-            .args(&["/C", r"C:\intelFPGA_lite\23.1std\quartus\bin64\quartus_sh --flow compile RoC"])
+            .args(["--flow", "compile", "RoC"])
             .output()
             .unwrap();
-        println!("{:?}", String::from_utf8_lossy(&out.stdout));
-
+        println!("{}", String::from_utf8_lossy(&out.stdout));
         results
     }
 
     pub fn program (&self, path: &Path) -> ProgramResults {
         let results = ProgramResults{};
-        let out = Command::new("cmd")
+        let out = Command::new("quartus_pgm")
             .current_dir(path)
-            .arg("/C")
-            .raw_arg(r#"C:\intelFPGA_lite\23.1std\quartus\bin64\quartus_pgm -c "DE-SoC [USB-1]" -m jtag -o "p;RoC.sof@2""#)
+            .args(["DE-SoC [USB-1]", "-m", "jtag", "-o", "p;RoC.sof@2"])
             .output()
             .unwrap();
-        println!("{:?}", String::from_utf8_lossy(&out.stdout));
+        println!("{}", String::from_utf8_lossy(&out.stdout));
 
         results
     }

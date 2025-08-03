@@ -36,9 +36,32 @@ fn remove_ss(values: u16, distance: u8) -> u16 {
 
 #[inline(always)]
 fn or_possible(a: u16, b: u16) -> u16 {
-    let a_lsb = a & (u16::MAX - a);
-    let b_lsb = b & (u16::MAX - b);
-    (a | b) & a_lsb.wrapping_sub(1) & b_lsb.wrapping_sub(1)
+    let a_lsb = a & (0u16.wrapping_sub(a));
+    let a_mask = !a_lsb.saturating_sub(1);
+
+    let b_lsb = b & (0u16.wrapping_sub(b));
+    let b_mask = !b_lsb.saturating_sub(1);
+
+    (a | b) & a_mask & b_mask
+}
+
+#[test]
+fn test_or_possible() {
+    assert_eq!(or_possible(0b1010100, 0b1010), 0b1011100);
+    assert_eq!(or_possible(0b1010, 0b1010100), 0b1011100);
+
+    assert_eq!(or_possible(0b111010100, 0b0), 0b111010100);
+    assert_eq!(or_possible(0b0, 0b111010100), 0b111010100);
+
+    assert_eq!(or_possible(0b0, 0b0), 0b0);
+    assert_eq!(
+        or_possible(0b1111_1111_1111_1111, 0b1111_1111_1111_1111),
+        0b1111_1111_1111_1111
+    );
+    assert_eq!(
+        or_possible(0b1111_1111_1111_1111, 0b0),
+        0b1111_1111_1111_1111
+    );
 }
 
 #[inline(always)]

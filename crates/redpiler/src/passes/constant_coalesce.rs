@@ -1,5 +1,6 @@
 use super::Pass;
 use crate::compile_graph::{CompileGraph, CompileLink, CompileNode, NodeIdx, NodeState, NodeType};
+use crate::possible_signal_strength::PossibleSS;
 use crate::{CompilerInput, CompilerOptions};
 use mchprs_world::World;
 use petgraph::visit::NodeIndexable;
@@ -16,7 +17,7 @@ impl<W: World> Pass<W> for ConstantCoalesce {
             is_input: false,
             is_output: false,
             annotations: Default::default(),
-            possible_outputs: 1 << 15,
+            possible_outputs: PossibleSS::constant(15),
         });
 
         for i in 0..graph.node_bound() {

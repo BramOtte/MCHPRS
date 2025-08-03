@@ -9,6 +9,7 @@
 
 use super::Pass;
 use crate::compile_graph::{Annotations, CompileGraph, CompileNode, NodeIdx, NodeState, NodeType};
+use crate::possible_signal_strength::PossibleSS;
 use crate::{CompilerInput, CompilerOptions};
 use itertools::Itertools;
 use mchprs_blocks::block_entities::BlockEntity;
@@ -98,16 +99,16 @@ fn for_pos<W: World>(
         return;
     }
 
-    let possible_outputs: u16 = match ty {
+    let possible_outputs: PossibleSS = match ty {
         // Inputs
-        NodeType::Button | NodeType::Lever | NodeType::PressurePlate => 1 | (1 << 15),
-        NodeType::Constant => 1 << state.output_strength,
+        NodeType::Button | NodeType::Lever | NodeType::PressurePlate => PossibleSS::BOOL,
+        NodeType::Constant => PossibleSS::constant(state.output_strength),
         // Outputs
-        NodeType::Trapdoor | NodeType::Lamp | NodeType::NoteBlock { .. } => 1,
+        NodeType::Trapdoor | NodeType::Lamp | NodeType::NoteBlock { .. } => PossibleSS::constant(0),
         // Hex components
-        NodeType::Comparator { .. } | NodeType::Wire => 0xffff,
+        NodeType::Comparator { .. } | NodeType::Wire => PossibleSS::FULL,
         // Binary components
-        NodeType::Repeater { .. } | NodeType::Torch => (1 << 15) | 1,
+        NodeType::Repeater { .. } | NodeType::Torch => PossibleSS::BOOL,
     };
 
     let node_idx = graph.add_node(CompileNode {

@@ -3,6 +3,7 @@ mod compile_graph;
 mod task_monitor;
 // mod debug_graph;
 mod passes;
+mod possible_signal_strength;
 
 use backend::{BackendDispatcher, JITBackend};
 use mchprs_blocks::blocks::Block;

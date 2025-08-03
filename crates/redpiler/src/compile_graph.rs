@@ -2,6 +2,8 @@ use mchprs_blocks::blocks::{ComparatorMode, Instrument};
 use mchprs_blocks::BlockPos;
 use petgraph::stable_graph::{NodeIndex, StableGraph};
 
+use crate::possible_signal_strength::PossibleSS;
+
 pub type NodeIdx = NodeIndex;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -89,7 +91,7 @@ pub struct CompileNode {
     pub annotations: Annotations,
 
     /// A bitset of the possible output signal strengths with 1 << N representing a signal strength of N
-    pub possible_outputs: u16,
+    pub possible_outputs: PossibleSS,
 }
 
 impl CompileNode {

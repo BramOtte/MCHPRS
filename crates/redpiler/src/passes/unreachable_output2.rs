@@ -20,7 +20,7 @@ impl<W: World> Pass<W> for UnreachableOutput2 {
                 continue;
             }
 
-            let max_output = graph[idx].possible_outputs.ilog2() as u8;
+            let max_output = graph[idx].possible_outputs.max_ss();
 
             // Now we can go through all the outgoing nodes and remove the ones with a weight that
             // is too high.

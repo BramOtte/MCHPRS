@@ -1,6 +1,7 @@
 use super::Pass;
 use crate::backend::direct::calculate_comparator_output;
 use crate::compile_graph::{CompileGraph, LinkType, NodeIdx, NodeType};
+use crate::possible_signal_strength::PossibleSS;
 use crate::{CompilerInput, CompilerOptions};
 use mchprs_world::World;
 use petgraph::visit::{EdgeRef, NodeIndexable};
@@ -27,59 +28,21 @@ impl<W: World> Pass<W> for NarrowOutputs {
     }
 }
 
-const POSITIVE: u16 = 0xffff << 1;
-
-#[inline(always)]
-fn remove_ss(values: u16, distance: u8) -> u16 {
-    (values & 1) | (values >> distance)
-}
-
-#[inline(always)]
-fn or_possible(a: u16, b: u16) -> u16 {
-    let a_lsb = a & (0u16.wrapping_sub(a));
-    let a_mask = !a_lsb.saturating_sub(1);
-
-    let b_lsb = b & (0u16.wrapping_sub(b));
-    let b_mask = !b_lsb.saturating_sub(1);
-
-    (a | b) & a_mask & b_mask
-}
-
-#[test]
-fn test_or_possible() {
-    assert_eq!(or_possible(0b1010100, 0b1010), 0b1011100);
-    assert_eq!(or_possible(0b1010, 0b1010100), 0b1011100);
-
-    assert_eq!(or_possible(0b111010100, 0b0), 0b111010100);
-    assert_eq!(or_possible(0b0, 0b111010100), 0b111010100);
-
-    assert_eq!(or_possible(0b0, 0b0), 0b0);
-    assert_eq!(
-        or_possible(0b1111_1111_1111_1111, 0b1111_1111_1111_1111),
-        0b1111_1111_1111_1111
-    );
-    assert_eq!(
-        or_possible(0b1111_1111_1111_1111, 0b0),
-        0b1111_1111_1111_1111
-    );
-}
-
-#[inline(always)]
-pub fn calc_possible_inputs(graph: &CompileGraph, idx: NodeIdx) -> (u16, u16) {
+pub fn calc_possible_inputs(graph: &CompileGraph, idx: NodeIdx) -> (PossibleSS, PossibleSS) {
     let node = &graph[idx];
-    let mut def = 0;
-    let mut side = 0;
+    let mut def = PossibleSS::EMPTY;
+    let mut side = PossibleSS::EMPTY;
     for edge in graph.edges_directed(idx, Direction::Incoming) {
         let source = edge.source();
         let weight = edge.weight();
         let ss = weight.ss;
         let ty = weight.ty;
         let val = graph[source].possible_outputs;
-        let val = remove_ss(val, ss);
+        let val = val.subtract_ss(ss);
         if ty == LinkType::Default {
-            def = or_possible(def, val);
+            def = def.dust_or(val);
         } else {
-            side = or_possible(side, val);
+            side = side.dust_or(val);
         }
     }
 
@@ -88,67 +51,66 @@ pub fn calc_possible_inputs(graph: &CompileGraph, idx: NodeIdx) -> (u16, u16) {
         ..
     } = node.ty
     {
-        def = if far_input == 0 {
-            def
-        } else if def & (1 << 15) != 0 {
-            (1 << 15) | (1 << far_input)
+        def = if def == PossibleSS::constant(15) {
+            PossibleSS::constant(15)
+        } else if def.contains(15) {
+            PossibleSS::constant(15).with(far_input)
         } else {
-            1 << far_input
-        }
+            PossibleSS::constant(far_input)
+        };
     }
 
-    if def == 0 {
-        def = 1
-    }
-    if side == 0 {
-        side = 1;
-    }
+    def.insert_zero_if_empty();
+    side.insert_zero_if_empty();
     (def, side)
 }
 
-#[inline(always)]
-fn calc_possible_outputs(graph: &CompileGraph, idx: NodeIdx) -> u16 {
+fn calc_possible_outputs(graph: &CompileGraph, idx: NodeIdx) -> PossibleSS {
     let node = &graph[idx];
     let (def, side) = calc_possible_inputs(graph, idx);
 
-    let current_output = 1u16 << node.state.output_strength;
-    current_output
-        | match node.ty {
-            NodeType::Repeater { .. } => {
-                (if (def & 1) != 0 { 1 } else { 0 })
-                    | (if (def & POSITIVE) != 0 { 1 << 15 } else { 0 })
+    let mut outputs = PossibleSS::constant(node.state.output_strength);
+    match node.ty {
+        NodeType::Repeater { .. } => {
+            if def.contains(0) {
+                outputs.insert(0)
             }
-            NodeType::Torch => {
-                (if (def & 1) != 0 { 1 << 15 } else { 0 })
-                    | (if (def & POSITIVE) != 0 { 1 } else { 0 })
+            if def.contains_positive() {
+                outputs.insert(15)
             }
-            NodeType::Comparator { mode, .. } => {
-                let mut from_inputs = 0;
-                for def_ss in 0..=15u8 {
-                    let ii = 1 << def_ss;
-                    if (ii & def) == 0 {
+        }
+        NodeType::Torch => {
+            if def.contains(0) {
+                outputs.insert(15)
+            }
+            if def.contains_positive() {
+                outputs.insert(0);
+            }
+        }
+        NodeType::Comparator { mode, .. } => {
+            for def_ss in 0..=15u8 {
+                if !def.contains(def_ss) {
+                    continue;
+                }
+                for side_ss in 0..=15u8 {
+                    if !side.contains(side_ss) {
                         continue;
                     }
-                    for side_ss in 0..=15u8 {
-                        let jj = 1 << side_ss;
-                        if (jj & side) == 0 {
-                            continue;
-                        }
-                        let output = calculate_comparator_output(mode, def_ss, side_ss);
-                        from_inputs |= 1 << output;
-                    }
+                    let output = calculate_comparator_output(mode, def_ss, side_ss);
+                    outputs.insert(output);
                 }
-                from_inputs
             }
-            NodeType::Wire => def,
-            NodeType::Lamp
-            | NodeType::Button
-            | NodeType::Lever
-            | NodeType::PressurePlate
-            | NodeType::Trapdoor
-            | NodeType::Constant
-            | NodeType::NoteBlock { .. } => node.possible_outputs,
         }
+        NodeType::Wire => outputs = def,
+        NodeType::Lamp
+        | NodeType::Button
+        | NodeType::Lever
+        | NodeType::PressurePlate
+        | NodeType::Trapdoor
+        | NodeType::Constant
+        | NodeType::NoteBlock { .. } => outputs = node.possible_outputs,
+    }
+    outputs
 }
 
 fn narrow_iteration(graph: &mut CompileGraph) -> usize {

@@ -43,7 +43,6 @@ struct Nod {
     ty: NodeType,
     state: NodeState,
 }
-const POSITIVE: u16 = 0xffff << 1;
 
 fn run_iteration(graph: &mut CompileGraph) -> usize {
     let mut num_coalesced = 0;
@@ -73,19 +72,18 @@ fn run_iteration(graph: &mut CompileGraph) -> usize {
             let weight = edge.weight();
             let ss_dist = weight.ss;
 
-            let possible_ss = if is_bool {
-                source_node.possible_outputs & (POSITIVE << ss_dist)
+            let input_signature = if is_bool {
+                source_node.possible_outputs.bool_signature(ss_dist)
             } else {
-                (source_node.possible_outputs & 1)
-                    | ((source_node.possible_outputs & POSITIVE) >> ss_dist)
+                source_node.possible_outputs.hex_signature(ss_dist)
             };
 
             let link_type = weight.ty;
 
             if link_type == LinkType::Default {
-                nod.default_inputs.push((source, possible_ss));
+                nod.default_inputs.push((source, input_signature));
             } else {
-                nod.side_inputs.push((source, possible_ss));
+                nod.side_inputs.push((source, input_signature));
             }
         }
 

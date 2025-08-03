@@ -2,11 +2,12 @@
 //!
 //! This pass replaces nodes of constant output with a constant node
 //! This pass requires narrow_outputs.rs to be ran first
-//! When this pass replaces constant_coalesce.rs and constant_fold.rs
+//! This pass replaces constant_coalesce.rs and constant_fold.rs
 
 use super::Pass;
 use crate::compile_graph::{CompileGraph, CompileNode, NodeIdx, NodeState, NodeType};
 use crate::passes::coalesce2::coalesce;
+use crate::possible_signal_strength::PossibleSS;
 use crate::{CompilerInput, CompilerOptions};
 use mchprs_world::World;
 use petgraph::visit::NodeIndexable;
@@ -22,7 +23,7 @@ impl<W: World> Pass<W> for ConstantFold2 {
             is_input: false,
             is_output: false,
             annotations: Default::default(),
-            possible_outputs: 1 << 15,
+            possible_outputs: PossibleSS::constant(15),
         });
 
         for i in 0..graph.node_bound() {
@@ -32,11 +33,13 @@ impl<W: World> Pass<W> for ConstantFold2 {
             }
             let node = &graph[idx];
 
-            if !node.is_removable() || node.possible_outputs.count_ones() != 1 {
+            if !node.is_removable() {
                 continue;
             }
 
-            let ss = node.possible_outputs.ilog2() as u8;
+            let Some(ss) = node.possible_outputs.get_constant() else {
+                continue;
+            };
 
             coalesce(graph, idx, constant, 15 - ss);
         }

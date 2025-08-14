@@ -2,10 +2,6 @@ use std::ops::Not;
 
 pub mod petaig;
 pub mod aiger;
-pub mod andtree;
-pub mod testnetwork;
-pub mod and;
-
 pub trait Network {
     type Node;
     type Sig: Copy + Not;

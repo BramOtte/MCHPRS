@@ -1,0 +1,17 @@
+digraph {
+    0 [ label = "False" ]
+    1 [ label = "Input" ]
+    2 [ label = "Input" ]
+    4 [ label = "Latch" ]
+    6 [ label = "Latch" ]
+    8 [ label = "Latch" ]
+    9 [ label = "And" ]
+    10 [ label = "Output" ]
+    8 -> 10 [ label = "false" ]
+    1 -> 4 [ label = "false" ]
+    6 -> 9 [ label = "false" ]
+    2 -> 6 [ label = "false" ]
+    4 -> 9 [ label = "false" ]
+    9 -> 8 [ label = "false" ]
+}
+

@@ -1,3 +1,4 @@
+use super::Network;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
@@ -6,20 +7,18 @@ use std::iter::Copied;
 use std::num::NonZero;
 use std::ops::{BitXor, Not};
 use std::rc::Rc;
-use super::Network;
 
 use petgraph::visit::{EdgeRef, IntoEdgesDirected, IntoNeighborsDirected, NodeIndexable};
 use petgraph::Direction::{Incoming, Outgoing};
 
 use super::petaig;
 
-#[derive(Debug, Clone, Copy)]
-pub struct AigLit(u32);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AigLit(pub u32);
 
 impl AigLit {
     pub const FALSE: AigLit = AigLit::c(false);
     pub const TRUE: AigLit = AigLit::c(true);
-
 
     pub const fn c(sign: bool) -> Self {
         Self::new(0, sign)
@@ -32,7 +31,6 @@ impl AigLit {
     pub const fn sign(&self) -> bool {
         self.0 & 1 != 0
     }
-
 
     pub const fn index(&self) -> usize {
         (self.0 >> 1) as usize
@@ -70,7 +68,7 @@ pub struct AigerHeader {
 }
 
 impl AigerHeader {
-    pub fn parse(bytes: &[u8]) -> Result<Self, AigerParseError<'static>>  {
+    pub fn parse(bytes: &[u8]) -> Result<Self, AigerParseError<'static>> {
         Self::p(&mut Parser::new(bytes))
     }
 
@@ -87,7 +85,7 @@ impl AigerHeader {
         if max_index != pi_count + latch_count + and_count {
             return Err(AigerParseError::new(
                 parser.pos(),
-                format!("{max_index} != {pi_count} + {latch_count} + {and_count}")
+                format!("{max_index} != {pi_count} + {latch_count} + {and_count}"),
             ));
         }
 
@@ -111,10 +109,10 @@ latches
 outputs
 */
 pub struct Aiger {
-    pub start_latches: usize,
-    pub start_gates: usize,
     pub ands: Vec<And>,
     pub outputs: Vec<AigLit>,
+    pub start_latches: usize,
+    pub start_gates: usize,
 }
 impl Aiger {
     pub fn ci_count(&self) -> usize {
@@ -136,6 +134,22 @@ impl Aiger {
         self.ands.len() - self.ci_count() - 1
     }
 
+    pub fn ands(&self) -> std::ops::Range<usize> {
+        self.start_gates..self.ands.len()
+    }
+
+    pub fn pis(&self) -> std::ops::Range<usize> {
+        0..self.start_latches
+    }
+
+    pub fn cis(&self) -> std::ops::Range<usize> {
+        0..self.start_gates
+    }
+
+    pub fn latch_sources(&self) -> std::ops::Range<usize> {
+        self.start_latches..self.start_gates
+    }
+
     pub fn set_latch_count(&mut self, latch_count: usize) {
         assert!(latch_count <= self.ci_count());
         assert!(latch_count <= self.co_count());
@@ -143,8 +157,18 @@ impl Aiger {
         self.start_latches = self.start_gates - latch_count;
     }
 
-    pub fn new() -> Self {
-        Self { start_latches: 1, ands: vec![And(AigLit::FALSE, AigLit::FALSE)], outputs: Vec::new(), start_gates: 1 }
+    pub fn new(
+        num_inputs: usize,
+        num_outputs: usize,
+        num_gates: usize,
+        num_latches: usize,
+    ) -> Self {
+        Self {
+            ands: vec![And(AigLit::FALSE, AigLit::FALSE); 1 + num_inputs + num_latches + num_gates],
+            outputs: Vec::with_capacity(num_outputs + num_latches),
+            start_latches: 1 + num_inputs,
+            start_gates: 1 + num_inputs + num_latches,
+        }
     }
 
     pub fn get_input(&self, index: usize) -> AigLit {
@@ -172,20 +196,20 @@ impl Aiger {
         Output(index)
     }
 
-    pub fn iter_pis(&self) -> impl Iterator<Item=AigLit> {
+    pub fn iter_pis(&self) -> impl Iterator<Item = AigLit> {
         (1..self.start_latches).map(|i| AigLit::new(i, false))
     }
-    pub fn iter_cis(&self) -> impl Iterator<Item=AigLit> {
+    pub fn iter_cis(&self) -> impl Iterator<Item = AigLit> {
         (1..self.start_gates).map(|i| AigLit::new(i, false))
     }
-    pub fn iter_latches(&self) -> impl Iterator<Item=AigLit> {
+    pub fn iter_latches(&self) -> impl Iterator<Item = AigLit> {
         (self.start_latches..self.start_gates).map(|i| AigLit::new(i, false))
     }
 
-    pub fn iter_ands(&self) -> impl Iterator<Item=AigLit> {
+    pub fn iter_ands(&self) -> impl Iterator<Item = AigLit> {
         (self.start_gates..self.ands.len()).map(|i| AigLit::new(i, false))
     }
-    pub fn iter_and_nodes<'a>(&'a self) -> impl Iterator<Item=usize> {
+    pub fn iter_and_nodes<'a>(&'a self) -> impl Iterator<Item = usize> {
         self.start_gates..self.ands.len()
     }
 
@@ -195,10 +219,30 @@ impl Aiger {
         Ok((graph, index))
     }
 
+    pub fn calc_layers(&mut self) -> Vec<u32> {
+        let mut layers = Vec::new();
+        let mut min_layer = self.start_gates;
+        for i in self.start_gates..self.ands.len() {
+            let And(l, r) = self.ands[i];
+            if l.index() >= min_layer || r.index() >= min_layer {
+                min_layer = i;
+                layers.push(i as u32);
+            }
+        }
+
+        layers
+    }
+
     pub fn parse(bytes: &[u8]) -> Result<(Self, usize), AigerParseError> {
         let mut parser = Parser::new(bytes);
 
-        let AigerHeader { max_index: _, pi_count, latch_count, po_count, and_count } = AigerHeader::p(&mut parser)?;
+        let AigerHeader {
+            max_index: _,
+            pi_count,
+            latch_count,
+            po_count,
+            and_count,
+        } = AigerHeader::p(&mut parser)?;
 
         let ci_count = pi_count + latch_count;
 
@@ -213,7 +257,7 @@ impl Aiger {
             aig.ands.set_len(1 + ci_count);
         }
 
-        for _ in 0..latch_count+po_count {
+        for _ in 0..latch_count + po_count {
             parser.skip_white();
             let next_state = parser.num()?;
             aig.outputs.push(AigLit(next_state as u32));
@@ -221,10 +265,10 @@ impl Aiger {
 
         parser.next();
 
-        for i in 1+ci_count..1+ci_count+and_count {
+        for i in 1 + ci_count..1 + ci_count + and_count {
             let delta0 = parser.var_int()?;
             let delta1 = parser.var_int()?;
-            let lhs = i*2;
+            let lhs = i * 2;
 
             let rhs0 = lhs - delta0;
             let rhs1 = rhs0 - delta1;
@@ -235,9 +279,9 @@ impl Aiger {
     }
 
     pub fn serialize<W: std::io::Write>(&self, w: &mut W, comb: bool) -> std::io::Result<()> {
-        fn write_var_int<W: std::io::Write>(mut x: usize, w: &mut W) -> std::io::Result<()>  {
+        fn write_var_int<W: std::io::Write>(mut x: usize, w: &mut W) -> std::io::Result<()> {
             while x > 0 {
-                w.write(&[(x & 127) as u8 | if x >= 128 {128} else {0}])?;
+                w.write(&[(x & 127) as u8 | if x >= 128 { 128 } else { 0 }])?;
                 x >>= 7;
             }
             Ok(())
@@ -246,15 +290,31 @@ impl Aiger {
         let total = self.pi_count() + self.latch_count() + self.and_count();
 
         if comb {
-            writeln!(w, "aig {} {} {} {} {}", total, self.ci_count(), 0, self.co_count(), self.and_count())?;
+            writeln!(
+                w,
+                "aig {} {} {} {} {}",
+                total,
+                self.ci_count(),
+                0,
+                self.co_count(),
+                self.and_count()
+            )?;
         } else {
-            writeln!(w, "aig {} {} {} {} {}", total, self.pi_count(), self.latch_count(), self.po_count(), self.and_count())?;
+            writeln!(
+                w,
+                "aig {} {} {} {} {}",
+                total,
+                self.pi_count(),
+                self.latch_count(),
+                self.po_count(),
+                self.and_count()
+            )?;
         }
 
         for output in self.outputs.iter().copied() {
             writeln!(w, "{}", output.num())?;
         }
-        
+
         for lhs in self.iter_ands() {
             let And(mut rhs0, mut rhs1) = self.ands[lhs.index()];
             if rhs0.num() < rhs1.num() {
@@ -288,14 +348,20 @@ impl Aiger {
 
 pub struct AigerParseError<'a> {
     index: usize,
-    message: Cow<'a, str>
+    message: Cow<'a, str>,
 }
-impl <'a> AigerParseError<'a> {
+impl<'a> AigerParseError<'a> {
     pub fn new(pos: usize, message: String) -> Self {
-        Self { index: pos, message: Cow::Owned(message) }
+        Self {
+            index: pos,
+            message: Cow::Owned(message),
+        }
     }
     pub fn ueof(pos: usize) -> Self {
-        Self { index: pos, message: Cow::Borrowed("unexpected input") }
+        Self {
+            index: pos,
+            message: Cow::Borrowed("unexpected input"),
+        }
     }
     pub fn index(&self) -> usize {
         self.index
@@ -305,27 +371,29 @@ impl <'a> AigerParseError<'a> {
     }
 }
 
-impl <'a> Debug for AigerParseError<'a> {
+impl<'a> Debug for AigerParseError<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}: {}", self.index(), self.message())
     }
 }
 
-impl <'a> Display for AigerParseError<'a> {
+impl<'a> Display for AigerParseError<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}: {}", self.index(), self.message())
     }
 }
-
 
 struct Parser<'a> {
     bytes: &'a [u8],
     iter: Copied<std::slice::Iter<'a, u8>>,
 }
 
-impl <'a> Parser<'a> {
+impl<'a> Parser<'a> {
     fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, iter: bytes.iter().copied() }
+        Self {
+            bytes,
+            iter: bytes.iter().copied(),
+        }
     }
     fn pos(&self) -> usize {
         self.bytes.len() - self.iter.len()
@@ -341,15 +409,15 @@ impl <'a> Parser<'a> {
     }
 
     fn skip_spaces(&mut self) {
-        self.skip_while(|c| c == ' ' as u8 )
+        self.skip_while(|c| c == ' ' as u8)
     }
     fn skip_white(&mut self) {
-        self.skip_while(|c| c <= ' ' as u8 )
-    }    
-    
+        self.skip_while(|c| c <= ' ' as u8)
+    }
+
     fn skip_while<F: Fn(u8) -> bool>(&mut self, f: F) {
         while let Some(p) = self.peak() {
-            if !f(p){
+            if !f(p) {
                 break;
             }
             self.next();
@@ -361,7 +429,7 @@ impl <'a> Parser<'a> {
             return None;
         };
 
-        if !f(p){
+        if !f(p) {
             return None;
         }
 
@@ -378,7 +446,7 @@ impl <'a> Parser<'a> {
         self.skip_spaces();
         let mut num = 0;
         let mut matched = false;
-        while let Some(c) = self.next_if(|c| c.is_ascii_digit())  {
+        while let Some(c) = self.next_if(|c| c.is_ascii_digit()) {
             num = num * 10 + (c as usize - '0' as usize);
             matched = true;
         }

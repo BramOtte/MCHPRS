@@ -1,0 +1,18 @@
+digraph {
+    0 [ label = "False" ]
+    1 [ label = "Input" ]
+    2 [ label = "Input" ]
+    3 [ label = "LocalInput" ]
+    4 [ label = "Latch" ]
+    5 [ label = "LocalInput" ]
+    6 [ label = "Latch" ]
+    7 [ label = "LocalInput" ]
+    8 [ label = "Latch" ]
+    9 [ label = "LocalInput" ]
+    10 [ label = "Output" ]
+    3 -> 4 [ label = "false" ]
+    5 -> 6 [ label = "false" ]
+    7 -> 8 [ label = "true" ]
+    9 -> 10 [ label = "false" ]
+}
+

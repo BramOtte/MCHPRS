@@ -3,7 +3,9 @@ use std::default;
 use std::io::{BufWriter, Write};
 use std::fs::File;
 use std::ops::Not;
+use std::os::unix::process::{self, CommandExt};
 use std::path::Display;
+use std::process::Command;
 use std::sync::Arc;
 
 use mchprs_blocks::blocks::ComparatorMode;
@@ -62,6 +64,16 @@ impl Data {
 #[derive(Default)]
 pub struct ConstructAig;
 
+pub struct PetAigData {
+    pub graph: petaig::Aig,
+    pub input_to_pos: Vec<BlockPos>,
+    pub pos_to_input: FxHashMap<BlockPos, u32>,
+    pub output_to_pos: Vec<BlockPos>,
+
+    pub input_state: Vec<bool>,
+    pub output_state: Vec<bool>,
+}
+
 impl ConstructAig {
     pub fn compile(
         &mut self,
@@ -69,33 +81,53 @@ impl ConstructAig {
         ticks: Vec<TickEntry>,
         options: &CompilerOptions,
         monitor: Arc<TaskMonitor>,
-    ) -> aigrs::networks::petaig::Aig {
-        let inputs: Vec<petaig::Node> = Vec::new();
-        let outputs: FxHashMap<petaig::Node, BlockPos> = FxHashMap::default();
+    ) -> PetAigData {
+        let mut input_to_pos: Vec<BlockPos> = Vec::new();
+        let mut pos_to_input: FxHashMap<BlockPos, u32> = FxHashMap::default();
+        let mut input_state: Vec<bool> = Vec::new();
+        let mut output_to_pos: Vec<BlockPos> = Vec::new();
+        let mut output_state: Vec<bool> = Vec::new();
+        let mut inputs: Vec<petaig::Node> = Vec::new();
+        let mut input_state: Vec::<bool> = Vec::new();
 
         println!("export AIG");
         let mut node_map: FxHashMap::< petgraph::prelude::NodeIndex, Data> = FxHashMap::default();
         let mut aig = Aig::new();
+
+
+        let mut tick_map = FxHashMap::<BlockPos, TickEntry>::default();
+        for tick in ticks {
+            tick_map.insert(tick.pos, tick);
+        }
 
         dbg!();
 
         for (index, node) in graph.node_references() {
             match node.ty {
                 NodeType::Repeater { delay, facing_diode } => {
+                    let powered = node.state.powered;
+                    let tick = node.block.and_then(|(pos, _)| tick_map.get(&pos));
+                    let fill = if let Some(tick) = tick {
+                        tick.ticks_left as u8
+                    } else {
+                        0
+                    };
+
                     let locking = graph.edges_directed(index, Incoming).any(|edge| edge.weight().ty == compile_graph::LinkType::Side);
-                    
 
                     let default_input = aig.local_input();
                     let mut i0 = default_input.lit();
                     let mut side_input = Input::None;
 
+                    let latch_powered = powered;
                     let (latch_start, mut latch_end) = aig.latch();
-                    let first_latch = latch_end;
+                    let first_latch = latch_end.xor(latch_powered);
                     
-                    for _ in 1..delay {
+                    for i in 1..delay {
+                        let latch_powered = powered; // ^ (i < fill);
                         let (next_state, state) = aig.latch();
-                        aig.connect_drain(next_state, latch_end);
-                        latch_end = state;
+                        aig.connect_drain(next_state, latch_end.xor(latch_powered));
+                        latch_end = state.xor(latch_powered);
                     }
                     
                     let output = latch_end;
@@ -110,7 +142,7 @@ impl ConstructAig {
 
 
                     if delay <= 1 || no_pulse_extension {
-                        aig.connect_drain(latch_start, i0);
+                        aig.connect_drain(latch_start, i0.xor(latch_powered));
                     } else {
                         // s1 = (s & !o) | (i & !(!s & o))
                         let s = first_latch;
@@ -121,7 +153,7 @@ impl ConstructAig {
                         let input_signal = aig.and(i, accept_input);
                         let s1 = aig.or(state_signal, input_signal);
 
-                        aig.connect_drain(latch_start, s1);
+                        aig.connect_drain(latch_start, s1.xor(latch_powered));
                     }
                     
                     node_map.insert(index, Data {
@@ -131,13 +163,16 @@ impl ConstructAig {
                     });
                 },
                 NodeType::Torch => {
+                    let lit = node.state.powered;
                     let default_input = aig.local_input();
 
-                    let output = !aig.latch2(default_input.lit());
+                    let output = !aig.latch2(default_input.with_sign(!lit)).xor(!lit);
                     
                     node_map.insert(index, Data::unary(default_input, output));
                 },
                 NodeType::Comparator { mode, far_input, .. } => {
+                    // TODO: represent state in latches
+
                     let default_inputs = [(); 15].map(|_| aig.local_input());
                     let side_inputs = [(); 15].map(|_| aig.local_input());
                     let mut outputs = [(); 15].map(|_| Vec::<AigLit>::new());
@@ -201,25 +236,72 @@ impl ConstructAig {
                     let default_input = aig.local_input();
                     aig.output(default_input.lit());
                     node_map.insert(index, Data::output(default_input));
+
+                    output_state.push(node.state.powered);
+                    let Some((pos, _)) = node.block else {
+                        todo!();
+                    };
+                    output_to_pos.push(pos);
                 },
                 NodeType::Button => {
                     node_map.insert(index, Data::input(aig.input()));
+                    
+                    input_state.push(node.state.powered);
+
+                    let Some((pos, _)) = node.block else {
+                        todo!();
+                    };
+                    pos_to_input.insert(pos, pos_to_input.len() as u32);
+                    input_to_pos.push(pos);
                 },
                 NodeType::Lever => {
                     node_map.insert(index, Data::input(aig.input()));
+                    
+                    input_state.push(node.state.powered);
 
+                    let Some((pos, _)) = node.block else {
+                        todo!();
+                    };
+                    pos_to_input.insert(pos, pos_to_input.len() as u32);
+                    input_to_pos.push(pos);
                 },
                 NodeType::PressurePlate => {
                     node_map.insert(index, Data::input(aig.input()));
+                
+                    input_state.push(node.state.powered);
 
+                    let Some((pos, _)) = node.block else {
+                        todo!();
+                    };
+                    pos_to_input.insert(pos, pos_to_input.len() as u32);
+                    input_to_pos.push(pos);
                 },
                 NodeType::Trapdoor => {
                     let default_input = aig.local_input();
                     aig.output(default_input.lit());
                     node_map.insert(index, Data::output(default_input));
+
+                    output_state.push(node.state.powered);
+                    let Some((pos, _)) = node.block else {
+                        todo!();
+                    };
+                    output_to_pos.push(pos);
                 },
                 NodeType::Wire => {
-                    println!("wire?");
+                    // Wire dot output
+                    let default_inputs = [(); 15].map(|_| aig.local_input());
+                    
+                    for input in &default_inputs {
+                        aig.output(input.lit());
+                    }
+                    
+                    node_map.insert(index, Data {
+                        default_input: Input::Hex(default_inputs),
+                        side_input: Input::None,
+                        output: DOutput::None,
+                    });
+                    
+                    todo!("output state and pos map");
                 },
                 NodeType::Constant => {
                     node_map.insert(index, Data::input(aig.c(node.state.output_strength > 0)));
@@ -228,6 +310,12 @@ impl ConstructAig {
                     let default_input = aig.local_input();
                     aig.output(default_input.lit());
                     node_map.insert(index, Data::output(default_input));
+
+                    output_state.push(node.state.powered);
+                    let Some((pos, _)) = node.block else {
+                        todo!();
+                    };
+                    output_to_pos.push(pos);
                 },
             }
         }
@@ -235,7 +323,7 @@ impl ConstructAig {
 
         {
             let g = petgraph::dot::Dot::new(&aig.g);
-            let mut f = BufWriter::new(File::create("target/graph0.dot").unwrap());
+            let mut f = BufWriter::new(File::create("graph0.dot").unwrap());
             writeln!(f, "{:?}", g).unwrap();
         }
 
@@ -261,6 +349,7 @@ impl ConstructAig {
             ] {
                 match data_input {
                     Input::None => {
+                        println!("{:?} {:?}", graph[node], inputs);
                         assert_eq!(inputs.len(), 0);
                     }
                     Input::Binary(input) => {
@@ -329,7 +418,8 @@ impl ConstructAig {
                 continue;
             }
 
-            assert_eq!(aig.g.edges_directed(node, Incoming).count(), 1)
+
+            // assert_eq!(aig.g.edges_directed(node, Incoming).count(), 1)
         }
 
         dbg!();
@@ -346,8 +436,17 @@ impl ConstructAig {
 
         // {
         //     let g = petgraph::dot::Dot::new(&aig.g);
-        //     let mut f = BufWriter::new(File::create("target/graphgc.dot").unwrap());
+        //     let mut f = BufWriter::new(File::create("graphgc.dot").unwrap());
         //     writeln!(f, "{:?}", g).unwrap();
+        //     f.flush().unwrap();
+
+        //     let mut a = Command::new("dot")
+        //         // .current_dir(std::env::current_dir().unwrap())
+        //         .args(["graphgc.dot", "-Tsvg", "-o", "graphgc.svg"])
+        //         .spawn().unwrap().wait().unwrap();
+
+        //     // a.wait().unwrap();
+        //     // println!("{:?}", a);
         // }
         // {
         //     let mut f = BufWriter::new(File::create("target/graph.aig").unwrap());
@@ -358,7 +457,14 @@ impl ConstructAig {
 
 
         dbg!("done");
-        aig
+        PetAigData {
+            graph: aig,
+            input_to_pos,
+            pos_to_input,
+            output_to_pos,
+            input_state,
+            output_state,
+        }
     }
 
     fn status_message(&self) -> &'static str {

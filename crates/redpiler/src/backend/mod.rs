@@ -37,8 +37,10 @@ pub trait JITBackend {
 }
 
 use direct::DirectBackend;
+use aig::AigBackend;
 
 #[enum_dispatch(JITBackend)]
 pub enum BackendDispatcher {
     DirectBackend,
+    AigBackend,
 }

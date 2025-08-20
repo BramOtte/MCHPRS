@@ -106,7 +106,7 @@ set_location_assignment PIN_{i_clk} -to i_clk\n",
         let results = ProgramResults{};
         let out = Command::new("quartus_pgm")
             .current_dir(path)
-            .args(["DE-SoC [USB-1]", "-m", "jtag", "-o", "p;RoC.sof@2"])
+            .args(["-c", "DE-SoC [USB-1]", "-m", "jtag", "-o", "p;RoC.sof@2"])
             .output()
             .unwrap();
         println!("{}", String::from_utf8_lossy(&out.stdout));

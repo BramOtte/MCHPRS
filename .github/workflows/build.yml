@@ -44,7 +44,9 @@ jobs:
       - name: "Add multi-lib support"
         if: matrix.arch
         shell: bash
-        run: sudo dpkg --add-architecture ${{ matrix.arch }}
+        run: 
+          sudo dpkg --add-architecture ${{ matrix.arch }}
+          sudo apt update
 
       - name: "Install apt packages"
         if: matrix.apt_packages

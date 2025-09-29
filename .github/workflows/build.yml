@@ -52,6 +52,7 @@ jobs:
           echo "deb [arch=${{ matrix.arch }}] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -cs)-security main restricted universe" | sudo tee -a /etc/apt/sources.list.d/${{ matrix.arch }}.list
           echo "Installed apt sources:"
           cat /etc/apt/sources.list.d/${{ matrix.arch }}.list
+          sudo apt update
 
       - name: "Install apt packages"
         if: matrix.apt_packages

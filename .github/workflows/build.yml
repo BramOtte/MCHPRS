@@ -41,12 +41,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: "Add multi-lib support"
+      - uses: ryankurte/action-apt@v0.4.0
         if: matrix.arch
-        shell: bash
-        run: |
-          sudo dpkg --add-architecture ${{ matrix.arch }}
-          sudo apt update
+        with:
+          arch: ${{ matrix.arch }}
 
       - name: "Install apt packages"
         if: matrix.apt_packages

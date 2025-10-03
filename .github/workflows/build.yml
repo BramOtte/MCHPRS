@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "*-actions" ]
     tags: [ "v*" ]
   pull_request:
     branches: [ "master" ]
@@ -24,7 +24,7 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04
             arch: arm64
-            apt_packages: gcc-aarch64-linux-gnu pkg-config libssl-dev:arm64
+            # apt_packages: gcc-aarch64-linux-gnu pkg-config libssl-dev:arm64
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             ext: .exe
@@ -40,19 +40,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      # from: https://github.com/ryankurte/action-apt
-      - name: "Add ports.ubuntu.com sources to /etc/apt/sources.list.d/${{ matrix.arch }}.list"
-        if: matrix.arch
-        shell: bash
-        run: |
-          echo "deb [arch=${{ matrix.arch }}] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -cs) main restricted universe" | sudo tee /etc/apt/sources.list.d/${{ matrix.arch }}.list
-          echo "deb [arch=${{ matrix.arch }}] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -cs)-updates main restricted universe" | sudo tee -a /etc/apt/sources.list.d/${{ matrix.arch }}.list
-          echo "deb [arch=${{ matrix.arch }}] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -cs)-backports main restricted universe "| sudo tee -a /etc/apt/sources.list.d/${{ matrix.arch }}.list
-          echo "deb [arch=${{ matrix.arch }}] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -cs)-security main restricted universe" | sudo tee -a /etc/apt/sources.list.d/${{ matrix.arch }}.list
-          echo "Installed apt sources:"
-          cat /etc/apt/sources.list.d/${{ matrix.arch }}.list
-          sudo apt update
 
       - name: "Install apt packages"
         if: matrix.apt_packages

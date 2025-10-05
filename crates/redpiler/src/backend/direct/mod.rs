@@ -113,6 +113,7 @@ pub struct DirectBackend {
     pos_map: FxHashMap<BlockPos, NodeId>,
     scheduler: TickScheduler,
     events: Vec<Event>,
+    changed: Vec<NodeId>,
     noteblock_info: Vec<(BlockPos, Instrument, u32)>,
 }
 
@@ -125,7 +126,11 @@ impl DirectBackend {
         let node = &mut self.nodes[node_id];
         let old_power = node.output_power;
 
-        node.changed = true;
+        if node.is_io && !node.changed {
+            self.changed.push(node_id);
+            node.changed = true;
+        }
+
         node.powered = powered;
         node.output_power = new_power;
         for i in 0..node.updates.len() {
@@ -158,6 +163,7 @@ impl DirectBackend {
             update::update_node(
                 &mut self.scheduler,
                 &mut self.events,
+                &mut self.changed,
                 &mut self.nodes,
                 update,
             );
@@ -249,22 +255,25 @@ impl JITBackend for DirectBackend {
                 }
             }
         }
-        for (i, node) in self.nodes.inner_mut().iter_mut().enumerate() {
-            let Some((pos, block)) = &mut self.blocks[i] else {
+
+        for i in self.changed.drain(..) {
+            let node = &mut self.nodes[i];
+
+            let Some((pos, block)) = &mut self.blocks[i.index()] else {
                 continue;
             };
-            if node.changed && (!io_only || node.is_io) {
-                if let Some(powered) = block_powered_mut(block) {
-                    *powered = node.powered
-                }
-                if let Block::RedstoneWire { wire, .. } = block {
-                    wire.power = node.output_power
-                };
-                if let Block::RedstoneRepeater { repeater } = block {
-                    repeater.locked = node.locked;
-                }
-                world.set_block(*pos, *block);
+            
+            if let Some(powered) = block_powered_mut(block) {
+                *powered = node.powered
             }
+            if let Block::RedstoneWire { wire, .. } = block {
+                wire.power = node.output_power
+            };
+            if let Block::RedstoneRepeater { repeater } = block {
+                repeater.locked = node.locked;
+            }
+            world.set_block(*pos, *block);
+        
             node.changed = false;
         }
     }
@@ -284,17 +293,6 @@ impl JITBackend for DirectBackend {
     }
 }
 
-/// Set node for use in `update`. None of the nodes here have usable output power,
-/// so this function does not set that.
-fn set_node(node: &mut Node, powered: bool) {
-    node.powered = powered;
-    node.changed = true;
-}
-
-fn set_node_locked(node: &mut Node, locked: bool) {
-    node.locked = locked;
-    node.changed = true;
-}
 
 fn schedule_tick(
     scheduler: &mut TickScheduler,

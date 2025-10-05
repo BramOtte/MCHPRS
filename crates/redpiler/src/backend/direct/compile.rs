@@ -4,7 +4,8 @@ use itertools::Itertools;
 use mchprs_blocks::blocks::{Block, Instrument};
 use mchprs_blocks::BlockPos;
 use mchprs_world::TickEntry;
-use petgraph::visit::EdgeRef;
+use petgraph::graph::NodeIndex;
+use petgraph::visit::{EdgeRef, NodeIndexable};
 use petgraph::Direction;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
@@ -144,14 +145,19 @@ fn compile_node(
 
 pub fn compile(
     backend: &mut DirectBackend,
-    graph: CompileGraph,
+    mut graph: CompileGraph,
     ticks: Vec<TickEntry>,
     options: &CompilerOptions,
     _monitor: Arc<TaskMonitor>,
 ) {
     // Create a mapping from compile to backend node indices
     let mut nodes_map = FxHashMap::with_capacity_and_hasher(graph.node_count(), Default::default());
-    for node in graph.node_indices() {
+    for node in 0..graph.node_bound() {
+        let node = NodeIndex::new(node);
+        if !graph.contains_node(node) {
+            continue;
+        }
+        graph[node].is_output |= !options.io_only;
         nodes_map.insert(node, nodes_map.len());
     }
     let nodes_len = nodes_map.len();

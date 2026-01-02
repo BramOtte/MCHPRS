@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/proc_macros", "crates/redpiler_graph", "crates/world_exporter"]
+members = ["crates/proc_macros", "crates/redpiler_graph", "crates/sync/mchprs_sync", "crates/world_exporter"]
 
 [package]
 name = "mchprs"
@@ -77,7 +77,7 @@ bitvec = "1"
 flate2 = "1"
 smallvec = { version = "1.15.1", features = ["union"] }
 enum_dispatch = "0.3"
-petgraph = "0.7"
+petgraph = { path = "../petgraph" }
 thiserror = "2"
 syn = "2"
 quote = "1"
@@ -86,3 +86,4 @@ tracing-appender = "0.2"
 paste = "1.0"
 chrono = "0.4"
 clap = { version = "4.5", features = ["derive"] }
+crossbeam-utils = "0.8.21"

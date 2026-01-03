@@ -31,15 +31,16 @@ pub struct Sender<T> {
 
 impl <T, const SIZE: usize> Sender<[CachePadded<T>; SIZE]> {
     pub fn get(&mut self) -> &mut T {
-        let write = self.queue.write.load(Ordering::Relaxed);
+        let write = self.write;
         let next_write = (write + 1) % SIZE;
-        
-        loop {
-            let read = self.queue.read.load(Ordering::Relaxed);
-            if read != next_write {
-                break;
+        if next_write == self.read {
+            loop {
+                self.read = self.queue.read.load(Ordering::Relaxed);
+                if self.read != next_write {
+                    break;
+                }
+                std::thread::yield_now();
             }
-            std::thread::yield_now();
         }
 
         unsafe {
@@ -48,9 +49,9 @@ impl <T, const SIZE: usize> Sender<[CachePadded<T>; SIZE]> {
     }
 
     pub fn advance(&mut self) {
-        let write = self.queue.write.load(Ordering::Relaxed);
-        let next_write = (write + 1) % SIZE;
-        self.queue.write.store(next_write, Ordering::Release);
+        let write = self.write;
+        self.write = (write + 1) % SIZE;
+        self.queue.write.store(self.write, Ordering::Release);
     }
 }
 
@@ -62,40 +63,26 @@ pub struct Receiver<T> {
 }
 
 impl <T, const SIZE: usize> Receiver<[CachePadded<T>; SIZE]> {
-    pub fn get_slice<'a, E>(&'a mut self) -> &'a [E]
-        where T: Deref<Target = [E]>
-    {
-        let read = self.queue.read.load(Ordering::Relaxed);
-
-        loop {
-            let write = self.queue.write.load(Ordering::Acquire);
-            if write != read {
-                break;
-            }
-            std::thread::yield_now();
-        }
-
-        self.queue.values[read].deref()
-    }
-
     pub fn get<'a>(&'a mut self) -> &'a T {
-        let read = self.queue.read.load(Ordering::Relaxed);
+        let read = self.read;
 
-        loop {
-            let write = self.queue.write.load(Ordering::Acquire);
-            if write != read {
-                break;
+        if read == self.write {
+            loop {
+                self.write = self.queue.write.load(Ordering::Acquire);
+                if self.write != read {
+                    break;
+                }
+                std::thread::yield_now();
             }
-            std::thread::yield_now();
         }
 
         &self.queue.values[read]
     }
 
     pub fn advance(&mut self) {
-        let read = self.queue.read.load(Ordering::Relaxed);
-        let next_read = (read + 1) % SIZE;
-        self.queue.read.store(next_read, Ordering::Release);
+        let read = self.read;
+        self.read = (read + 1) % SIZE;
+        self.queue.read.store(self.read, Ordering::Release);
     }
 }
 
@@ -111,8 +98,8 @@ unsafe fn make_mut<T>(ptr: *const T) -> *mut T {
 fn test_channel() {
     use std::{hint::black_box, time::Instant};
 
-    const TO_SEND: u64 = 1_000_000;
-    const QUEUE_SIZE: usize = 1024;
+    const TO_SEND: u64 = 10_000_000;
+    const QUEUE_SIZE: usize = 256;
 
     println!();
     println!("get and advance");
@@ -145,14 +132,14 @@ fn test_channel() {
             let mut first = start;
             let sum = black_box({
                 let mut sum: u64 = 0;
-                let slice = receiver.get_slice();
+                let slice = receiver.get();
                 first = Instant::now();
                 for d in slice {
                     sum += d.iter().copied().sum::<u64>();
                 }
                 receiver.advance();
                 for _ in 1..TO_SEND {
-                    for d in receiver.get_slice() {
+                    for d in receiver.get() {
                         sum += d.iter().copied().sum::<u64>();
                     }
                     receiver.advance();

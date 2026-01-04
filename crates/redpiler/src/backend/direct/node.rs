@@ -18,7 +18,7 @@ impl NodeId {
 
 // This is Pretty Bad:tm: because one can create a NodeId using another instance of Nodes,
 // but at least some type system protection is better than none.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Nodes {
     pub nodes: Box<[Node]>,
 }
@@ -163,6 +163,8 @@ pub struct Node {
     pub fwd_link_begin: usize,
     /// The index to after the last forward link of this node.
     pub fwd_link_end: usize,
+
+    pub partition: u8,
 
     pub is_io: bool,
 

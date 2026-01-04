@@ -30,6 +30,13 @@ pub struct Sender<T> {
 }
 
 impl <T, const SIZE: usize> Sender<[T; SIZE]> {
+    #[inline]
+    pub fn send<F: FnOnce(&mut T)>(&mut self, f: F) {
+        f(self.get());
+        // Safety: get was successful
+        unsafe { self.advance() };
+    }
+
     pub fn get(&mut self) -> &mut T {
         let write = self.write;
         let next_write = (write + 1) % SIZE;
@@ -43,12 +50,16 @@ impl <T, const SIZE: usize> Sender<[T; SIZE]> {
             }
         }
 
+        // Safety: exclusive access guaranteed by self.write and self.read.
+        //  The Receiver will only attempt to read the value after this reverence has already been dropped,
+        //  and this entry will also not be referenced here before its been consumed by the receiver.
         unsafe {
             &mut *(make_mut(self.queue.values.as_ptr())).add(write)
         }
     }
 
-    pub fn advance(&mut self) {
+    // Safety: only call once after successful get or try_get
+    unsafe fn advance(&mut self) {
         let write = self.write;
         self.write = (write + 1) % SIZE;
         self.queue.write.store(self.write, Ordering::Release);
@@ -63,6 +74,25 @@ pub struct Receiver<T> {
 }
 
 impl <T, const SIZE: usize> Receiver<[T; SIZE]> {
+    #[inline]
+    pub fn recv<F: FnOnce(&T)>(&mut self, f: F) {
+        f(self.get());
+        // Safety: get was successful
+        unsafe { self.advance() };
+
+    }
+
+    #[inline]
+    pub fn try_recv<F: FnOnce(&T)>(&mut self, f: F) -> bool {
+        let Some(data) = self.try_get() else {
+            return false;
+        };
+        f(data);
+        // Safety: try_get was successful
+        unsafe { self.advance() };
+        true
+    }
+
     pub fn get<'a>(&'a mut self) -> &'a T {
         let read = self.read;
 
@@ -92,14 +122,15 @@ impl <T, const SIZE: usize> Receiver<[T; SIZE]> {
         Some(&self.queue.values[read])
     }
 
-    pub fn advance(&mut self) {
+    // Safety: only call once after successful get or try_get
+    unsafe fn advance(&mut self) {
         let read = self.read;
         self.read = (read + 1) % SIZE;
         self.queue.read.store(self.read, Ordering::Release);
     }
 }
 
-
+// Safety: ptr is not read or modified elsewhere for the duration of the reference
 unsafe fn make_mut<T>(ptr: *const T) -> *mut T {
     ptr as *mut T
 }
@@ -131,18 +162,18 @@ fn test_channel() {
                 let mut sum = 0u64;
                 let d = &data[0];
                 sum += d.iter().sum::<u64>();
-                let s = sender.get();
-                s.clear();
-                s.push(*d);
-                sender.advance();
+                sender.send(|s| {
+                    s.clear();
+                    s.push(*d);
+                });
                 first = Instant::now();
 
                 for d in &data[1..] {
                     sum += d.iter().sum::<u64>();
-                    let s = sender.get();
-                    s.clear();
-                    s.push(*d);
-                    sender.advance();
+                    sender.send(|s| {
+                        s.clear();
+                        s.push(*d);
+                    });
                 }
                 sum
             });
@@ -157,17 +188,18 @@ fn test_channel() {
             let first;
             let sum = black_box({
                 let mut sum: u64 = 0;
-                let slice = receiver.get();
-                first = Instant::now();
-                for d in slice.iter() {
-                    sum += d.iter().copied().sum::<u64>();
-                }
-                receiver.advance();
-                for _ in 1..TO_SEND {
-                    for d in receiver.get().iter() {
+                receiver.recv(|slice| {
+                    for d in slice.iter() {
                         sum += d.iter().copied().sum::<u64>();
                     }
-                    receiver.advance();
+                });
+                first = Instant::now();
+                for _ in 1..TO_SEND {
+                    receiver.recv(|slice| {
+                        for d in slice {
+                            sum += d.iter().copied().sum::<u64>();
+                        }
+                    });
                 }
                 sum
             });

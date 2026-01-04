@@ -1,4 +1,6 @@
 use crate::compile_graph::{CompileGraph, LinkType, NodeIdx};
+use crate::passes::AnalysisInfos;
+use crate::passes::partition::PartitioningInfo;
 use crate::{CompilerOptions, TaskMonitor};
 use itertools::Itertools;
 use mchprs_blocks::blocks::{Block, Instrument};
@@ -12,7 +14,7 @@ use std::sync::Arc;
 use tracing::trace;
 
 use super::node::{ForwardLink, Node, NodeId, NodeInput, NodeType, Nodes, NonMaxU8};
-use super::DirectBackend;
+use super::DirectState;
 
 #[derive(Debug, Default)]
 struct FinalGraphStats {
@@ -30,6 +32,7 @@ fn compile_node(
     noteblock_info: &mut Vec<(SmallVec<[BlockPos; 1]>, Instrument, u32)>,
     forward_links: &mut Vec<ForwardLink>,
     stats: &mut FinalGraphStats,
+    partitioning: Option<&PartitioningInfo>,
 ) -> Node {
     let node = &graph[node_idx];
 
@@ -133,6 +136,14 @@ fn compile_node(
         }
     };
 
+    let partition = partitioning.map(|info| info.get(node_idx)).unwrap_or(0);
+    assert!(partition <= 255);
+    let partition = partition as u8;
+
+    // if node.is_output {
+    //     partition = 255;
+    // }
+
     Node {
         ty,
         default_inputs,
@@ -145,16 +156,20 @@ fn compile_node(
         pending_tick: false,
         changed: false,
         is_io: node.is_input || node.is_output,
+        partition,
     }
 }
 
 pub fn compile(
-    backend: &mut DirectBackend,
+    backend: &mut DirectState,
     graph: CompileGraph,
-    ticks: Vec<TickEntry>,
+    ticks: &[TickEntry],
     options: &CompilerOptions,
     _monitor: Arc<TaskMonitor>,
+    analysis_infos: &AnalysisInfos
 ) {
+    let partitioning: Option<&PartitioningInfo> = analysis_infos.get_analysis::<PartitioningInfo>();
+
     // Create a mapping from compile to backend node indices
     let mut nodes_map = FxHashMap::with_capacity_and_hasher(graph.node_count(), Default::default());
     for node in graph.node_indices() {
@@ -175,6 +190,7 @@ pub fn compile(
                 &mut backend.noteblock_info,
                 &mut backend.forward_links,
                 &mut stats,
+                partitioning
             )
         })
         .collect();

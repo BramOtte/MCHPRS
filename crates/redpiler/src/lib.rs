@@ -137,7 +137,7 @@ impl Compiler {
 
         let input = CompilerInput { world, bounds };
         let pass_manager = make_default_pass_manager::<W>();
-        let graph = pass_manager.run_passes(&options, &input, monitor.clone());
+        let (graph, analysis_infos) = pass_manager.run_passes(&options, &input, monitor.clone());
 
         if monitor.cancelled() {
             return;
@@ -162,7 +162,7 @@ impl Compiler {
             monitor.set_message("Compiling backend".to_string());
             let start = Instant::now();
 
-            jit.compile(graph, ticks, &options, monitor.clone());
+            jit.compile(graph, &ticks, &options, monitor.clone(), &analysis_infos);
 
             monitor.inc_progress();
             trace!("Backend compiled in {:?}", start.elapsed());

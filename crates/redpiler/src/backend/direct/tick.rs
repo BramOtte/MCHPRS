@@ -1,7 +1,7 @@
 use super::node::NodeId;
 use super::*;
 
-impl DirectBackend {
+impl DirectState {
     pub fn tick_node(&mut self, node_id: NodeId) {
         let node = &mut self.nodes[node_id];
         node.pending_tick = false;

@@ -11,6 +11,7 @@ mod identify_nodes;
 mod input_search;
 mod prune_orphans;
 mod unreachable_output;
+pub mod partition;
 
 use mchprs_world::World;
 
@@ -37,11 +38,12 @@ pub const fn make_default_pass_manager<'w, W: World>() -> PassManager<'w, W> {
         &coalesce2::Coalesce2,
         &prune_orphans::PruneOrphans,
         &dedup_links::DedupLinks,
+        &partition::PartitionGraph,
         &export_graph::ExportGraph,
     ])
 }
 
-pub trait AnalysisInfo: Any {}
+pub trait AnalysisInfo: Any + Sync {}
 
 #[derive(Default)]
 pub struct AnalysisInfos {
@@ -83,7 +85,7 @@ impl<'p, W: World> PassManager<'p, W> {
         options: &CompilerOptions,
         input: &CompilerInput<'_, W>,
         monitor: Arc<TaskMonitor>,
-    ) -> CompileGraph {
+    ) -> (CompileGraph, AnalysisInfos) {
         let mut graph = CompileGraph::new();
 
         // Add one for the backend compile step
@@ -99,7 +101,7 @@ impl<'p, W: World> PassManager<'p, W> {
             }
 
             if monitor.cancelled() {
-                return graph;
+                return (graph, analysis_infos);
             }
 
             trace!("Running pass: {}", pass.name());
@@ -124,7 +126,7 @@ impl<'p, W: World> PassManager<'p, W> {
             graph.dump();
         }
 
-        graph
+        (graph, analysis_infos)
     }
 }
 

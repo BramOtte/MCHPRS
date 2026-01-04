@@ -7,19 +7,24 @@ mod update;
 
 use super::JITBackend;
 use crate::backend::direct::node::ForwardLink;
+use crate::backend::direct::update::update_node;
 use crate::compile_graph::CompileGraph;
+use crate::passes::AnalysisInfos;
 use crate::task_monitor::TaskMonitor;
 use crate::{block_powered_mut, CompilerOptions};
 use mchprs_blocks::block_entities::BlockEntity;
 use mchprs_blocks::blocks::{Block, ComparatorMode, Instrument};
 use mchprs_blocks::BlockPos;
 use mchprs_redstone::{bool_to_ss, noteblock};
+use mchprs_sync::spsc;
 use mchprs_world::{TickEntry, TickPriority, World};
 use node::{Node, NodeId, NodeType, Nodes};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::fmt::Write;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread::JoinHandle;
 use std::{fmt, mem};
 use tracing::{debug, warn};
 
@@ -32,7 +37,7 @@ impl Queues {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct TickScheduler {
     queues_deque: [Queues; Self::NUM_QUEUES],
     pos: usize,
@@ -104,12 +109,226 @@ impl TickScheduler {
     }
 }
 
+#[derive(Clone)]
 enum Event {
     NoteBlockPlay { noteblock_id: u16 },
 }
 
+
+#[derive(Default, Debug)]
+enum Message {
+    Update(NodeId, bool, u8, u8),
+    #[default]
+    Tick,
+    TickN(u64),
+    Stop,
+    Flush(bool),
+    FlushUpdate(BlockPos, Block),
+    UseBlock(BlockPos),
+}
+
+const UPDATE_QUEUE_SIZE: usize = 1024;
+type UpdateQueue = [Message; UPDATE_QUEUE_SIZE];
+type UpdateSender = spsc::Sender<UpdateQueue>;
+type UpdateReceiver = spsc::Receiver<UpdateQueue>;
+
 #[derive(Default)]
 pub struct DirectBackend {
+    active: Option<Active>,
+}
+
+pub struct Active {
+    threads: Vec<JoinHandle<()>>,
+    input_sender: UpdateSender,
+    output_receiver: UpdateReceiver,
+    state: DirectState,
+    shared: Arc<Shared>,
+}
+
+struct Shared {
+    has_ticks_pending: Vec<AtomicBool>,
+}
+
+impl JITBackend for DirectBackend {
+    fn compile(&mut self, graph: CompileGraph, ticks: &[TickEntry], options: &CompilerOptions, monitor:Arc<TaskMonitor>, analysis_infos: &AnalysisInfos) {
+        let (input_sender, input_receiver) = spsc::channel_using([(); UPDATE_QUEUE_SIZE].map(|_| Default::default()));
+        
+        let (between_sender, between_receiver) = spsc::channel_using([(); UPDATE_QUEUE_SIZE].map(|_| Default::default()));
+
+        let (output_sender, output_receiver) = spsc::channel_using([(); UPDATE_QUEUE_SIZE].map(|_| Default::default()));
+
+        let (tmp_sender, tmp_receiver) = spsc::channel_using([(); UPDATE_QUEUE_SIZE].map(|_| Default::default()));
+
+        let mut has_ticks_pending = Vec::new();
+        for _ in 0..2 {
+            has_ticks_pending.push(AtomicBool::new(true));
+        }
+
+        let shared = Arc::new(Shared {
+            has_ticks_pending,
+        });
+
+        let mut input_state = DirectState::new(between_sender, shared.clone());
+        let mut output_state = DirectState::new(output_sender, shared.clone());
+        let mut state = DirectState::new(tmp_sender, shared.clone());
+
+        for state in [&mut input_state, &mut output_state, &mut state] {
+            for queues in state.scheduler.queues_deque.iter_mut() {
+                for queue in queues.0.iter_mut() {
+                    queue.clear();
+                }
+            }
+        }
+
+
+        input_state.compile(graph.clone(), ticks, options, monitor.clone(), analysis_infos);
+        state.compile(graph.clone(), ticks, options, monitor.clone(), analysis_infos);
+
+        output_state.compile(graph, ticks, options, monitor, analysis_infos);
+
+        let [input_thread, output_thread] = [(input_state, input_receiver, 0), (output_state, between_receiver, 1)].map(|(mut state, mut receiver, i)| std::thread::spawn(move || {
+            let mut running = true;
+            while running {
+                receiver.recv(|update| {
+                    // println!("{:?}", update);
+                    match update {
+                        &Message::Update(node_id, side, old_power, new_power) => {
+                            let update_ref = &mut state.nodes[node_id];
+                            let inputs = if side {
+                                &mut update_ref.side_inputs
+                            } else {
+                                &mut update_ref.default_inputs
+                            };
+
+                            // Safety: signal strength is never larger than 15
+                            unsafe {
+                                *inputs.ss_counts.get_unchecked_mut(old_power as usize) -= 1;
+                                *inputs.ss_counts.get_unchecked_mut(new_power as usize) += 1;
+                            }
+
+                            // println!(">> {:2} {:?}", update_ref.output_power, update_ref.ty, );
+                            update_node(&mut state.scheduler, &mut state.events, &mut state.nodes, node_id);
+                        },
+                        Message::Tick => {
+                            state.tick();
+                            state.update_sender.send(|msg| *msg = Message::Tick);
+                            // state.shared.has_ticks_pending[i].store(state.has_pending_ticks(), Ordering::Relaxed);
+                        },
+                        &Message::TickN(n) => {
+                            for _ in 0..n {
+                                state.tick();
+                                state.update_sender.send(|msg| *msg = Message::Tick);
+                            }
+                        },
+                        &Message::UseBlock(pos) => {
+                            state.on_use_block(pos);
+                        }
+                        &Message::Flush(io_only) => {
+                            state.flush2(io_only);
+                            state.update_sender.send(|msg| *msg = Message::Flush(io_only));
+                            return;
+                        },
+                        Message::FlushUpdate(pos, block) => {
+                            state.update_sender.send(|msg| *msg = Message::FlushUpdate(*pos, *block));
+                        },
+                        Message::Stop => {
+                            state.update_sender.send(|msg| *msg = Message::Stop);
+                            running = false;
+                            return;
+                        },
+                    } 
+                });
+            }
+        }));
+
+        self.active = Some(Active {
+            threads: vec![input_thread, output_thread],
+            input_sender,
+            output_receiver,
+            state,
+            shared
+        });
+    }
+
+    fn tickn(&mut self, n: u64) {
+        let Some(active) = &mut self.active else {
+            return;
+        };
+
+        active.input_sender.send(|msg| *msg = Message::TickN(n));
+    }
+
+    fn tick(&mut self) {
+        let Some(active) = &mut self.active else {
+            return;
+        };
+
+        active.input_sender.send(|msg| *msg = Message::Tick);
+    }
+
+    fn on_use_block(&mut self, pos: BlockPos) {
+        let Some(active) = &mut self.active else {
+            return;
+        };
+
+        active.input_sender.send(|msg| *msg = Message::UseBlock(pos));
+    }
+
+    fn set_pressure_plate(&mut self,pos:BlockPos,powered:bool) {
+        todo!()
+    }
+
+    fn flush<W:World>(&mut self, world: &mut W, io_only:bool) {
+        let Some(active) = &mut self.active else {
+            return;
+        };
+
+        active.input_sender.send(|msg| *msg = Message::Flush(io_only));
+
+        let mut running = true;
+        while running {
+            active.output_receiver.recv(|msg| {
+                match msg {
+                    &Message::FlushUpdate(pos, block) => {
+                        // println!("{:?} {:?}", pos, block);
+                        world.set_block(pos, block);
+                    }
+                    &Message::Update(node, side, old, new) => {
+                        // println!("## {:?} {:?} {:?} {:?} {:?}", node, active.state.nodes[node], side, old, new);
+                        panic!();
+                    }
+                    Message::Flush(_) | Message::Stop => running = false,
+                    _ => {}
+                }
+            });
+        }
+    }
+
+    fn reset<W:World>(&mut self, world: &mut W, io_only:bool) {
+        todo!()
+    }
+
+    fn has_pending_ticks(&self) -> bool {
+        let Some(active) = &self.active else {
+            return false;
+        };
+
+        for pending in active.shared.has_ticks_pending.iter() {
+            if pending.load(Ordering::Relaxed) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    #[doc = " Inspect block for debugging"]
+    fn inspect(&mut self, pos:BlockPos) {
+        todo!()
+    }
+}
+
+pub struct DirectState {
     nodes: Nodes,
     forward_links: Vec<ForwardLink>,
     blocks: Vec<SmallVec<[(BlockPos, Block); 1]>>,
@@ -117,15 +336,33 @@ pub struct DirectBackend {
     scheduler: TickScheduler,
     events: Vec<Event>,
     noteblock_info: Vec<(SmallVec<[BlockPos; 1]>, Instrument, u32)>,
+
+    update_sender: UpdateSender,
+    shared: Arc<Shared>,
 }
 
-impl DirectBackend {
+impl DirectState {
+    fn new(update_sender: UpdateSender, shared: Arc<Shared>) -> Self {
+        Self {
+            nodes: Default::default(),
+            forward_links: Default::default(),
+            blocks: Default::default(),
+            pos_map: Default::default(),
+            scheduler: Default::default(),
+            events: Default::default(),
+            noteblock_info: Default::default(),
+            update_sender,
+            shared
+        }
+    }
+
     fn schedule_tick(&mut self, node_id: NodeId, delay: usize, priority: TickPriority) {
         self.scheduler.schedule_tick(node_id, delay, priority);
     }
 
     fn set_node(&mut self, node_id: NodeId, powered: bool, new_power: u8) {
         let node = &mut self.nodes[node_id];
+        let partition = node.partition;
         let old_power = node.output_power;
 
         node.changed = true;
@@ -151,6 +388,11 @@ impl DirectBackend {
                 continue;
             }
 
+            if update_ref.partition != partition {
+                self.update_sender.send(|msg| *msg = Message::Update(node_id, side, old_power, new_power));
+                continue;
+            }
+
             // Safety: signal strength is never larger than 15
             unsafe {
                 *inputs.ss_counts.get_unchecked_mut(old_power as usize) -= 1;
@@ -165,9 +407,31 @@ impl DirectBackend {
             );
         }
     }
+
+    fn flush2(&mut self, io_only: bool) {
+        for (i, node) in self.nodes.inner_mut().iter_mut().enumerate() {
+            if !node.changed || (io_only && !node.is_io) {
+                continue;
+            }
+            node.changed = false;
+            for (pos, block) in &mut self.blocks[i] {
+                if let Some(powered) = block_powered_mut(block) {
+                    *powered = node.powered
+                }
+                if let Block::RedstoneWire { wire, .. } = block {
+                    wire.power = node.output_power
+                };
+                if let Block::RedstoneRepeater { repeater } = block {
+                    repeater.locked = node.locked;
+                }
+
+                self.update_sender.send(|msg| *msg = Message::FlushUpdate(*pos, *block));
+            }
+        }
+    }
 }
 
-impl JITBackend for DirectBackend {
+impl JITBackend for DirectState {
     fn inspect(&mut self, pos: BlockPos) {
         let Some(node_id) = self.pos_map.get(&pos) else {
             debug!("could not find node at pos {}", pos);
@@ -276,11 +540,12 @@ impl JITBackend for DirectBackend {
     fn compile(
         &mut self,
         graph: CompileGraph,
-        ticks: Vec<TickEntry>,
+        ticks: &[TickEntry],
         options: &CompilerOptions,
         monitor: Arc<TaskMonitor>,
+        analysis_infos: &AnalysisInfos
     ) {
-        compile::compile(self, graph, ticks, options, monitor);
+        compile::compile(self, graph, ticks, options, monitor, analysis_infos);
     }
 
     fn has_pending_ticks(&self) -> bool {
@@ -357,7 +622,7 @@ pub fn calculate_comparator_output(
     }
 }
 
-impl fmt::Display for DirectBackend {
+impl fmt::Display for DirectState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "digraph {{")?;
         for (id, node) in self.nodes.inner().iter().enumerate() {

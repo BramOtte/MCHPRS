@@ -1227,6 +1227,7 @@ dependencies = [
  "itertools",
  "mchprs_blocks",
  "mchprs_redstone",
+ "mchprs_sync",
  "mchprs_world",
  "petgraph",
  "redpiler_graph",

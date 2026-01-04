@@ -2,6 +2,8 @@ pub mod direct;
 
 use std::sync::Arc;
 
+use crate::passes::AnalysisInfos;
+
 use super::compile_graph::CompileGraph;
 use super::task_monitor::TaskMonitor;
 use super::CompilerOptions;
@@ -14,9 +16,10 @@ pub trait JITBackend {
     fn compile(
         &mut self,
         graph: CompileGraph,
-        ticks: Vec<TickEntry>,
+        ticks: &[TickEntry],
         options: &CompilerOptions,
         monitor: Arc<TaskMonitor>,
+        analysis_infos: &AnalysisInfos,
     );
     fn tick(&mut self);
 

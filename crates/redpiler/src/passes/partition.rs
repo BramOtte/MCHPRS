@@ -3,7 +3,7 @@ use std::ops::Deref;
 use std::time::Instant;
 
 use super::Pass;
-use crate::compile_graph::{CompileGraph, CompileLink, CompileNode, NodeIdx};
+use crate::compile_graph::{CompileGraph, CompileLink, CompileNode, NodeIdx, NodeType};
 use crate::passes::{AnalysisInfo, AnalysisInfos};
 use crate::{CompilerInput, CompilerOptions};
 use itertools::Itertools;
@@ -64,10 +64,24 @@ impl<W: World> Pass<W> for PartitionGraph {
         
         let mut partitions = vec![0; graph.node_bound()];
 
+        let mut constants = graph.node_indices().filter(|&id| graph[id].ty == NodeType::Constant);
+        let constant = constants.next().unwrap();
+        assert_eq!(None, constants.next());
+
         let biggest_partition = 1;
         
         for idx in components[biggest].iter().copied() {
+            if idx == constant || graph[idx].is_output {
+                continue;
+            }
+
             partitions[idx.index()] = biggest_partition;
+        }
+
+        for idx in graph.node_indices() {
+            if graph[idx].is_input {
+                partitions[idx.index()] = biggest_partition;
+            }
         }
 
         // let partition_count = 2;
@@ -100,19 +114,40 @@ impl<W: World> Pass<W> for PartitionGraph {
         //     }
         // }
 
-        for idx in components[biggest].iter().copied() {
-            let mut stack = vec![idx];
+        for idx in graph.node_indices() {
+            if partitions[idx.index()] != biggest_partition {
+                continue;
+            }
+            let mut stack = graph.neighbors_directed(idx, Incoming).collect::<Vec<NodeIdx>>();
             while let Some(idx) = stack.pop() {
-                for input in graph.neighbors_directed(idx, Outgoing) {
-                    if partitions[input.index()] != 0 {
-                        continue;
-                    }
-                    partitions[input.index()] = biggest_partition;
-                    stack.push(input);
-                    // input_cnt += 1;
+                if idx == constant || partitions[idx.index()] != 0 {
+                    continue;
+                }
+                assert!(!graph[idx].is_output);
+                partitions[idx.index()] = biggest_partition;
+                for inputs in graph.neighbors_directed(idx, Incoming) {
+                    stack.push(inputs);
                 }
             }
         }
+
+        
+        for idx in graph.node_indices() {
+            if partitions[idx.index()] != biggest_partition {
+                continue;
+            }
+            let mut stack = graph.neighbors_directed(idx, Outgoing).collect::<Vec<NodeIdx>>();
+            while let Some(idx) = stack.pop() {
+                if idx == constant || partitions[idx.index()] != 0 {
+                    continue;
+                }
+                partitions[idx.index()] = output_partition;
+                for outputs in graph.neighbors_directed(idx, Outgoing) {
+                    stack.push(outputs);
+                }
+            }
+        }
+        // }
 
         // for idx in graph.node_indices() {
         //     // if partitions[idx.index()] == {
@@ -132,14 +167,14 @@ impl<W: World> Pass<W> for PartitionGraph {
         // }
 
         for idx in graph.node_indices() {
-            if partitions[idx.index()] != 0 {
+            if idx == constant || partitions[idx.index()] != 0 {
                 continue;
             }
-            partitions[idx.index()] = biggest_partition;
+            partitions[idx.index()] = output_partition;
         }
 
         for idx in graph.node_indices() {
-            if partitions[idx.index()] != output_partition {
+            if idx == constant || partitions[idx.index()] != output_partition {
                 continue;
             }
             for output in graph.neighbors_directed(idx, Outgoing) {
@@ -151,12 +186,22 @@ impl<W: World> Pass<W> for PartitionGraph {
         // println!("{:?} {} {} {}", t1 - t0, components[biggest].len(), output_cnt, input_cnt);
         assert!(graph.node_indices().all(|idx| {
             let p = partitions[idx.index()];
-            // if p == biggest_partition {
-            //     assert!(!graph[idx].is_output);
-            // }
+            if p == biggest_partition {
+                assert!(!graph[idx].is_output);
+            }
+            if p == output_partition {
+                assert!(!graph[idx].is_input);
+            }
 
-            p == biggest_partition || p == output_partition
+            idx == constant || p == biggest_partition || p == output_partition
         } ));
+        let mut counters = vec![0; 3];
+
+        for idx in graph.node_indices() {
+            counters[partitions[idx.index()] as usize] += 1;
+        }
+
+        println!("{:?}", counters);
 
         analysis_infos.insert_analysis(PartitioningInfo {
             partitions

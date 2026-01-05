@@ -187,10 +187,11 @@ impl JITBackend for DirectBackend {
         output_state.compile(graph, ticks, options, monitor, analysis_infos);
 
         let [input_thread, output_thread] = [(input_state, input_receiver, 0), (output_state, between_receiver, 1)].map(|(mut state, mut receiver, i)| std::thread::spawn(move || {
+            // let mut update_cnt = 0;
+            // let mut tick_cnt = 0;
             let mut running = true;
             while running {
                 receiver.recv(|update| {
-                    // println!("{:?}", update);
                     match update {
                         &Message::Update(node_id, side, old_power, new_power) => {
                             let update_ref = &mut state.nodes[node_id];
@@ -206,7 +207,6 @@ impl JITBackend for DirectBackend {
                                 *inputs.ss_counts.get_unchecked_mut(new_power as usize) += 1;
                             }
 
-                            // println!(">> {:2} {:?}", update_ref.output_power, update_ref.ty, );
                             update_node(&mut state.scheduler, &mut state.events, &mut state.nodes, node_id);
                         },
                         Message::Tick => {
@@ -293,8 +293,8 @@ impl JITBackend for DirectBackend {
                         // println!("{:?} {:?}", pos, block);
                         world.set_block(pos, block);
                     }
-                    &Message::Update(node, side, old, new) => {
-                        // println!("## {:?} {:?} {:?} {:?} {:?}", node, active.state.nodes[node], side, old, new);
+                    &Message::Update(node, side, old, new ) => {
+                        println!("## {:?} {:?} {:?} {:?} {:?}", node, active.state.nodes[node], side, old, new);
                         panic!();
                     }
                     Message::Flush(_) | Message::Stop => running = false,
@@ -389,7 +389,7 @@ impl DirectState {
             }
 
             if update_ref.partition != partition {
-                self.update_sender.send(|msg| *msg = Message::Update(node_id, side, old_power, new_power));
+                self.update_sender.send(|msg| *msg = Message::Update(update, side, old_power, new_power));
                 continue;
             }
 
@@ -431,7 +431,7 @@ impl DirectState {
     }
 }
 
-impl JITBackend for DirectState {
+impl DirectState {
     fn inspect(&mut self, pos: BlockPos) {
         let Some(node_id) = self.pos_map.get(&pos) else {
             debug!("could not find node at pos {}", pos);
@@ -498,12 +498,16 @@ impl JITBackend for DirectState {
 
     fn tick(&mut self) {
         let mut queues = self.scheduler.queues_this_tick();
-
+        
+        // let mut ticks = 0;
         for node_id in queues.drain_iter() {
+            // ticks += 1;
             self.tick_node(node_id);
         }
 
         self.scheduler.end_tick(queues);
+
+        // ticks
     }
 
     fn flush<W: World>(&mut self, world: &mut W, io_only: bool) {

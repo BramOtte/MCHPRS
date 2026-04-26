@@ -1,0 +1,9 @@
+pub const CLIENT_INFORMATION: i32 = 0x00;
+pub const COOKIE_RESPONSE: i32 = 0x01;
+pub const CUSTOM_CLICK_ACTION: i32 = 0x08;
+pub const CUSTOM_PAYLOAD: i32 = 0x02;
+pub const FINISH_CONFIGURATION: i32 = 0x03;
+pub const KEEP_ALIVE: i32 = 0x04;
+pub const PONG: i32 = 0x05;
+pub const RESOURCE_PACK: i32 = 0x06;
+pub const SELECT_KNOWN_PACKS: i32 = 0x07;

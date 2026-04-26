@@ -1,4 +1,5 @@
 mod nbt_util;
+pub mod generated;
 pub mod packets;
 
 use packets::serverbound::ServerBoundPacket;

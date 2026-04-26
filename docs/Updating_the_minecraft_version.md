@@ -26,6 +26,7 @@ Copy the relevant files to the mc_data directory.
 ```sh
 cp generated/reports/blocks.json ../mc_data
 cp generated/reports/registries.json ../mc_data
+cp generated/reports/packets.json ../mc_data
 ```
 
 Finally you can go back into the root directory.

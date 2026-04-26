@@ -1,9 +1,13 @@
+mod packets;
+
 use convert_case::{Case, Casing};
 use indexmap::IndexMap;
 use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::{quote, ToTokens};
 use serde::Deserialize;
-use std::{collections::HashMap, fs, path::PathBuf, process::Command};
+use std::{collections::HashMap, fs, path::{Path, PathBuf}, process::Command};
+
+use crate::packets::Packets;
 
 #[derive(Deserialize)]
 struct BlockState {
@@ -893,6 +897,11 @@ fn main() {
     let registries_json: RegistriesJson =
         serde_json::from_str(&fs::read_to_string(mc_data_path.join("registries.json")).unwrap())
             .unwrap();
+
+    let packets_json: Packets = serde_json::from_str(&fs::read_to_string(mc_data_path.join("packets.json")).unwrap())
+            .unwrap();
+
+    packets_json.generate(Path::new("../network/src/generated"));
 
     let mut prop_types = yaml.prop_types.into_iter().collect::<Vec<_>>();
     prop_types.push((

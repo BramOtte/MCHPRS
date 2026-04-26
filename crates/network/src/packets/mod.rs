@@ -91,9 +91,15 @@ fn read_decompressed<T: PacketDecoderExt>(
     reader: &mut T,
     state: &mut NetworkState,
 ) -> DecodeResult<Box<dyn ServerBoundPacket>> {
+    use crate::generated::handshake::serverbound as handshake;
+    use crate::generated::status::serverbound as status;
+    use crate::generated::configuration::serverbound as config;
+    use crate::generated::login::serverbound as login;
+    use crate::generated::play::serverbound as play;
+
     let packet_id = reader.read_varint()?;
     let packet: Box<dyn ServerBoundPacket> = match *state {
-        NetworkState::Handshaking if packet_id == 0x00 => {
+        NetworkState::Handshaking if packet_id == handshake::INTENTION => {
             let handshake = SHandshake::decode(reader)?;
             match handshake.next_state {
                 1 => *state = NetworkState::Status,
@@ -102,40 +108,40 @@ fn read_decompressed<T: PacketDecoderExt>(
             }
             Box::new(handshake)
         }
-        NetworkState::Status if packet_id == 0x00 => Box::new(SRequest::decode(reader)?),
-        NetworkState::Status if packet_id == 0x01 => Box::new(SPing::decode(reader)?),
-        NetworkState::Login if packet_id == 0x00 => Box::new(SLoginStart::decode(reader)?),
-        NetworkState::Login if packet_id == 0x02 => Box::new(SLoginPluginResponse::decode(reader)?),
-        NetworkState::Login if packet_id == 0x03 => {
+        NetworkState::Status if packet_id == status::STATUS_REQUEST => Box::new(SRequest::decode(reader)?),
+        NetworkState::Status if packet_id == status::PING_REQUEST => Box::new(SPing::decode(reader)?),
+        NetworkState::Login if packet_id == login::HELLO => Box::new(SLoginStart::decode(reader)?),
+        NetworkState::Login if packet_id == login::CUSTOM_QUERY_ANSWER => Box::new(SLoginPluginResponse::decode(reader)?),
+        NetworkState::Login if packet_id == login::LOGIN_ACKNOWLEDGED => {
             *state = NetworkState::Configuration;
             Box::new(SLoginAcknowledged::decode(reader)?)
         }
-        NetworkState::Configuration if packet_id == 0x00 => {
+        NetworkState::Configuration if packet_id == config::CLIENT_INFORMATION => {
             Box::new(SClientInformation::decode(reader)?)
         }
-        NetworkState::Configuration if packet_id == 0x02 => {
+        NetworkState::Configuration if packet_id == config::FINISH_CONFIGURATION => {
             *state = NetworkState::Play;
             Box::new(SAcknowledgeFinishConfiguration::decode(reader)?)
         }
         _ => match packet_id {
-            0x04 => Box::new(SChatCommand::decode(reader)?),
-            0x05 => Box::new(SChatMessage::decode(reader)?),
-            0x09 => Box::new(SClientInformation::decode(reader)?),
-            0x0A => Box::new(SCommandSuggestionsRequest::decode(reader)?),
-            0x10 => Box::new(SPluginMessage::decode(reader)?),
-            0x15 => Box::new(SKeepAlive::decode(reader)?),
-            0x17 => Box::new(SSetPlayerPosition::decode(reader)?),
-            0x18 => Box::new(SSetPlayerPositionAndRotation::decode(reader)?),
-            0x19 => Box::new(SPlayerRotation::decode(reader)?),
-            0x1A => Box::new(SSetPlayerOnGround::decode(reader)?),
-            0x20 => Box::new(SPlayerAbilities::decode(reader)?),
-            0x21 => Box::new(SPlayerAction::decode(reader)?),
-            0x22 => Box::new(SPlayerCommand::decode(reader)?),
-            0x2C => Box::new(SSetHeldItem::decode(reader)?),
-            0x2F => Box::new(SSetCreativeModeSlot::decode(reader)?),
-            0x32 => Box::new(SUpdateSign::decode(reader)?),
-            0x33 => Box::new(SSwingArm::decode(reader)?),
-            0x35 => Box::new(SUseItemOn::decode(reader)?),
+            play::CHAT_COMMAND => Box::new(SChatCommand::decode(reader)?),
+            play::CHAT => Box::new(SChatMessage::decode(reader)?),
+            play::CLIENT_INFORMATION => Box::new(SClientInformation::decode(reader)?),
+            play::COMMAND_SUGGESTION => Box::new(SCommandSuggestionsRequest::decode(reader)?),
+            play::CUSTOM_PAYLOAD => Box::new(SPluginMessage::decode(reader)?),
+            play::KEEP_ALIVE => Box::new(SKeepAlive::decode(reader)?),
+            play::MOVE_PLAYER_POS => Box::new(SSetPlayerPosition::decode(reader)?),
+            play::MOVE_PLAYER_POS_ROT => Box::new(SSetPlayerPositionAndRotation::decode(reader)?),
+            play::MOVE_PLAYER_ROT => Box::new(SPlayerRotation::decode(reader)?),
+            play::MOVE_PLAYER_STATUS_ONLY => Box::new(SSetPlayerOnGround::decode(reader)?),
+            play::PLAYER_ABILITIES => Box::new(SPlayerAbilities::decode(reader)?),
+            play::PLAYER_ACTION => Box::new(SPlayerAction::decode(reader)?),
+            play::PLAYER_COMMAND => Box::new(SPlayerCommand::decode(reader)?),
+            play::SET_CARRIED_ITEM => Box::new(SSetHeldItem::decode(reader)?),
+            play::SET_CREATIVE_MODE_SLOT => Box::new(SSetCreativeModeSlot::decode(reader)?),
+            play::SIGN_UPDATE => Box::new(SUpdateSign::decode(reader)?),
+            play::SWING => Box::new(SSwingArm::decode(reader)?),
+            play::USE_ITEM_ON => Box::new(SUseItemOn::decode(reader)?),
             _ => Box::new(SUnknown),
         },
     };

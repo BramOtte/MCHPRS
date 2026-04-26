@@ -1,4 +1,8 @@
 use super::{PacketEncoder, PacketEncoderExt, PalettedContainer, PlayerProperty, SlotData};
+use crate::generated::status::clientbound as status;
+use crate::generated::configuration::clientbound as config;
+use crate::generated::login::clientbound as login;
+use crate::generated::play::clientbound as play;
 use crate::nbt_util::{NBTCompound, NBTMap};
 use bitvec::bits;
 use bitvec::prelude::Lsb0;
@@ -28,7 +32,7 @@ impl ClientBoundPacket for CResponse {
     fn encode(&self) -> PacketEncoder {
         let mut buf = Vec::new();
         buf.write_string(32767, &self.json_response);
-        PacketEncoder::new(buf, 0x00)
+        PacketEncoder::new(buf, status::STATUS_RESPONSE)
     }
 }
 
@@ -42,7 +46,7 @@ impl ClientBoundPacket for CDisconnectLogin {
     fn encode(&self) -> PacketEncoder {
         let mut buf = Vec::new();
         buf.write_string(32767, &self.reason);
-        PacketEncoder::new(buf, 0x00)
+        PacketEncoder::new(buf, login::LOGIN_DISCONNECT)
     }
 }
 
@@ -54,7 +58,7 @@ impl ClientBoundPacket for CPong {
     fn encode(&self) -> PacketEncoder {
         let mut buf = Vec::new();
         buf.write_long(self.payload);
-        PacketEncoder::new(buf, 0x01)
+        PacketEncoder::new(buf, login::HELLO)
     }
 }
 
@@ -73,7 +77,7 @@ impl ClientBoundPacket for CLoginSuccess {
         for prop in &self.properties {
             buf.write_player_property(prop);
         }
-        PacketEncoder::new(buf, 0x02)
+        PacketEncoder::new(buf, login::LOGIN_FINISHED)
     }
 }
 
@@ -85,7 +89,7 @@ impl ClientBoundPacket for CSetCompression {
     fn encode(&self) -> PacketEncoder {
         let mut buf = Vec::new();
         buf.write_varint(self.threshold);
-        PacketEncoder::new(buf, 0x03)
+        PacketEncoder::new(buf, login::LOGIN_COMPRESSION)
     }
 }
 
@@ -101,7 +105,7 @@ impl ClientBoundPacket for CLoginPluginRequest {
         buf.write_varint(self.message_id);
         buf.write_identifier(&self.channel);
         buf.write_bytes(&self.data);
-        PacketEncoder::new(buf, 0x04)
+        PacketEncoder::new(buf, login::CUSTOM_QUERY)
     }
 }
 
@@ -114,7 +118,7 @@ pub struct CConfigurationPluginMessage {
 
 impl ClientBoundPacket for CConfigurationPluginMessage {
     fn encode(&self) -> PacketEncoder {
-        encode_plugin_message(0x00, &self.channel, &self.data)
+        encode_plugin_message(config::CUSTOM_PAYLOAD, &self.channel, &self.data)
     }
 }
 
@@ -122,7 +126,7 @@ pub struct CFinishConfiguration;
 
 impl ClientBoundPacket for CFinishConfiguration {
     fn encode(&self) -> PacketEncoder {
-        PacketEncoder::new(Vec::new(), 0x02)
+        PacketEncoder::new(Vec::new(), config::FINISH_CONFIGURATION)
     }
 }
 
@@ -260,7 +264,7 @@ impl ClientBoundPacket for CRegistryData {
     fn encode(&self) -> PacketEncoder {
         let mut buf = Vec::new();
         self.registry_codec.encode(&mut buf);
-        PacketEncoder::new(buf, 0x05)
+        PacketEncoder::new(buf, config::REGISTRY_DATA)
     }
 }
 
@@ -298,7 +302,7 @@ impl ClientBoundPacket for CSpawnEntity {
         buf.write_short(self.velocity_x);
         buf.write_short(self.velocity_y);
         buf.write_short(self.velocity_z);
-        PacketEncoder::new(buf, 0x01)
+        PacketEncoder::new(buf, play::ADD_ENTITY)
     }
 }
 
@@ -312,7 +316,7 @@ impl ClientBoundPacket for CEntityAnimation {
         let mut buf = Vec::new();
         buf.write_varint(self.entity_id);
         buf.write_unsigned_byte(self.animation);
-        PacketEncoder::new(buf, 0x03)
+        PacketEncoder::new(buf, play::ANIMATE)
     }
 }
 
@@ -324,7 +328,7 @@ impl ClientBoundPacket for CAcknowledgeBlockChange {
     fn encode(&self) -> PacketEncoder {
         let mut buf = Vec::new();
         buf.write_varint(self.sequence_id);
-        PacketEncoder::new(buf, 0x05)
+        PacketEncoder::new(buf, play::BLOCK_CHANGED_ACK)
     }
 }
 
@@ -342,7 +346,7 @@ impl ClientBoundPacket for CBlockEntityData {
         buf.write_position(self.x, self.y, self.z);
         buf.write_varint(self.ty);
         buf.write_nbt(&self.nbt);
-        PacketEncoder::new(buf, 0x07)
+        PacketEncoder::new(buf, play::BLOCK_ENTITY_DATA)
     }
 }
 
@@ -358,7 +362,7 @@ impl ClientBoundPacket for CBlockUpdate {
         let mut buf = Vec::new();
         buf.write_position(self.x, self.y, self.z);
         buf.write_varint(self.block_id);
-        PacketEncoder::new(buf, 0x09)
+        PacketEncoder::new(buf, play::BLOCK_UPDATE)
     }
 }
 
@@ -389,7 +393,7 @@ impl ClientBoundPacket for CCommandSuggestionsResponse {
             }
         }
 
-        PacketEncoder::new(buf, 0x10)
+        PacketEncoder::new(buf, play::COMMAND_SUGGESTIONS)
     }
 }
 
@@ -481,7 +485,7 @@ impl ClientBoundPacket for CCommands {
             }
         }
         buf.write_varint(self.root_index);
-        PacketEncoder::new(buf, 0x11)
+        PacketEncoder::new(buf, play::COMMANDS)
     }
 }
 
@@ -502,7 +506,7 @@ impl ClientBoundPacket for CSetContainerContent {
             buf.write_slot_data(slot_data);
         }
         buf.write_slot_data(&self.carried_item);
-        PacketEncoder::new(buf, 0x13)
+        PacketEncoder::new(buf, play::CONTAINER_SET_CONTENT)
     }
 }
 
@@ -520,7 +524,7 @@ impl ClientBoundPacket for CSetContainerSlot {
         buf.write_varint(self.state_id);
         buf.write_short(self.slot);
         buf.write_slot_data(&self.slot_data);
-        PacketEncoder::new(buf, 0x15)
+        PacketEncoder::new(buf, play::CONTAINER_SET_SLOT)
     }
 }
 
@@ -543,7 +547,7 @@ impl ClientBoundPacket for CDisconnect {
     fn encode(&self) -> PacketEncoder {
         let mut buf = Vec::new();
         buf.write_text_component(&self.reason);
-        PacketEncoder::new(buf, 0x1B)
+        PacketEncoder::new(buf, play::DISCONNECT)
     }
 }
 
@@ -558,7 +562,7 @@ impl ClientBoundPacket for CUnloadChunk {
         let mut buf = Vec::new();
         buf.write_int(self.chunk_z);
         buf.write_int(self.chunk_x);
-        PacketEncoder::new(buf, 0x1F)
+        PacketEncoder::new(buf, play::FORGET_LEVEL_CHUNK)
     }
 }
 
@@ -581,7 +585,7 @@ impl ClientBoundPacket for CGameEvent {
             CGameEventType::WaitForChunks => buf.write_unsigned_byte(13),
         }
         buf.write_float(self.value);
-        PacketEncoder::new(buf, 0x20)
+        PacketEncoder::new(buf, play::GAME_EVENT)
     }
 }
 
@@ -593,7 +597,7 @@ impl ClientBoundPacket for CKeepAlive {
     fn encode(&self) -> PacketEncoder {
         let mut buf = Vec::new();
         buf.write_long(self.id);
-        PacketEncoder::new(buf, 0x24)
+        PacketEncoder::new(buf, play::KEEP_ALIVE)
     }
 }
 
@@ -692,7 +696,7 @@ impl ClientBoundPacket for CChunkData {
         // Block Light array count
         buf.write_varint(0);
 
-        PacketEncoder::new(buf, 0x25)
+        PacketEncoder::new(buf, play::LEVEL_CHUNK_WITH_LIGHT)
     }
 }
 
@@ -712,7 +716,7 @@ impl ClientBoundPacket for CWorldEvent {
         buf.write_position(self.x, self.y, self.z);
         buf.write_int(self.data);
         buf.write_bool(self.disable_relative_volume);
-        PacketEncoder::new(buf, 0x26)
+        PacketEncoder::new(buf, play::LEVEL_EVENT)
     }
 }
 
@@ -772,7 +776,7 @@ impl ClientBoundPacket for CLogin {
             buf.write_position(death_location.x, death_location.y, death_location.z);
         }
         buf.write_varint(self.portal_cooldown);
-        PacketEncoder::new(buf, 0x29)
+        PacketEncoder::new(buf, play::LOGIN)
     }
 }
 
@@ -788,7 +792,7 @@ impl ClientBoundPacket for COpenSignEditor {
         let mut buf = Vec::new();
         buf.write_position(self.pos_x, self.pos_y, self.pos_z);
         buf.write_bool(self.is_front_text);
-        PacketEncoder::new(buf, 0x32)
+        PacketEncoder::new(buf, play::OPEN_SIGN_EDITOR)
     }
 }
 
@@ -808,7 +812,7 @@ impl ClientBoundPacket for CUpdateEntityPosition {
         buf.write_short(self.delta_y);
         buf.write_short(self.delta_z);
         buf.write_bool(self.on_ground);
-        PacketEncoder::new(buf, 0x2C)
+        PacketEncoder::new(buf, play::MOVE_ENTITY_POS)
     }
 }
 
@@ -832,7 +836,7 @@ impl ClientBoundPacket for CUpdateEntityPositionAndRotation {
         buf.write_byte(((self.yaw / 360f32 * 256f32) as i32 % 256) as i8);
         buf.write_byte(((self.pitch / 360f32 * 256f32) as i32 % 256) as i8);
         buf.write_bool(self.on_ground);
-        PacketEncoder::new(buf, 0x2D)
+        PacketEncoder::new(buf, play::MOVE_ENTITY_POS_ROT)
     }
 }
 
@@ -850,7 +854,7 @@ impl ClientBoundPacket for CEntityRotation {
         buf.write_byte(((self.yaw / 360f32 * 256f32) as i32 % 256) as i8);
         buf.write_byte(((self.pitch / 360f32 * 256f32) as i32 % 256) as i8);
         buf.write_bool(self.on_ground);
-        PacketEncoder::new(buf, 0x2E)
+        PacketEncoder::new(buf, play::MOVE_ENTITY_ROT)
     }
 }
 
@@ -866,7 +870,7 @@ impl ClientBoundPacket for COpenScreen {
         buf.write_varint(self.window_id);
         buf.write_varint(self.window_type);
         buf.write_text_component(&self.window_title);
-        PacketEncoder::new(buf, 0x31)
+        PacketEncoder::new(buf, play::OPEN_SCREEN)
     }
 }
 
@@ -882,7 +886,7 @@ impl ClientBoundPacket for CPlayerAbilities {
         buf.write_unsigned_byte(self.flags);
         buf.write_float(self.fly_speed);
         buf.write_float(self.fov_modifier);
-        PacketEncoder::new(buf, 0x36)
+        PacketEncoder::new(buf, play::PLAYER_ABILITIES)
     }
 }
 
@@ -897,7 +901,7 @@ impl ClientBoundPacket for CPlayerInfoRemove {
         for &uuid in &self.players {
             buf.write_uuid(uuid);
         }
-        PacketEncoder::new(buf, 0x3B)
+        PacketEncoder::new(buf, play::PLAYER_INFO_REMOVE)
     }
 }
 
@@ -988,7 +992,7 @@ impl ClientBoundPacket for CPlayerInfoUpdate {
             buf.write_uuid(player.uuid);
             player.actions.encode(&mut buf);
         }
-        PacketEncoder::new(buf, 0x3C)
+        PacketEncoder::new(buf, play::PLAYER_INFO_UPDATE)
     }
 }
 
@@ -1012,7 +1016,7 @@ impl ClientBoundPacket for CSynchronizePlayerPosition {
         buf.write_float(self.pitch);
         buf.write_unsigned_byte(self.flags);
         buf.write_varint(self.teleport_id);
-        PacketEncoder::new(buf, 0x3E)
+        PacketEncoder::new(buf, play::PLAYER_POSITION)
     }
 }
 
@@ -1027,7 +1031,7 @@ impl ClientBoundPacket for CRemoveEntities {
         for &entity_id in &self.entity_ids {
             buf.write_varint(entity_id);
         }
-        PacketEncoder::new(buf, 0x40)
+        PacketEncoder::new(buf, play::REMOVE_ENTITIES)
     }
 }
 
@@ -1044,7 +1048,7 @@ impl ClientBoundPacket for CResetScore {
         if let Some(objective_name) = &self.objective_name {
             buf.write_string(32767, objective_name);
         }
-        PacketEncoder::new(buf, 0x42)
+        PacketEncoder::new(buf, play::RESET_SCORE)
     }
 }
 
@@ -1058,7 +1062,7 @@ impl ClientBoundPacket for CSetHeadRotation {
         let mut buf = Vec::new();
         buf.write_varint(self.entity_id);
         buf.write_byte(((self.head_yaw / 360f32 * 256f32) as i32 % 256) as i8);
-        PacketEncoder::new(buf, 0x46)
+        PacketEncoder::new(buf, play::ROTATE_HEAD)
     }
 }
 
@@ -1094,7 +1098,7 @@ impl ClientBoundPacket for CUpdateSectionBlocks {
             buf.write_varlong(long as i64);
         }
 
-        PacketEncoder::new(buf, 0x47)
+        PacketEncoder::new(buf, play::SECTION_BLOCKS_UPDATE)
     }
 }
 
@@ -1106,7 +1110,7 @@ impl ClientBoundPacket for CSetHeldItem {
     fn encode(&self) -> PacketEncoder {
         let mut buf = Vec::new();
         buf.write_byte(self.slot);
-        PacketEncoder::new(buf, 0x51)
+        PacketEncoder::new(buf, play::SET_HELD_SLOT)
     }
 }
 
@@ -1120,7 +1124,7 @@ impl ClientBoundPacket for CSetCenterChunk {
         let mut buf = Vec::new();
         buf.write_varint(self.chunk_x);
         buf.write_varint(self.chunk_z);
-        PacketEncoder::new(buf, 0x52)
+        PacketEncoder::new(buf, play::SET_CHUNK_CACHE_CENTER)
     }
 }
 
@@ -1134,7 +1138,7 @@ impl ClientBoundPacket for CDisplayObjective {
         let mut buf = Vec::new();
         buf.write_byte(self.position as i8);
         buf.write_string(32767, &self.score_name);
-        PacketEncoder::new(buf, 0x55)
+        PacketEncoder::new(buf, play::SET_DISPLAY_OBJECTIVE)
     }
 }
 
@@ -1159,7 +1163,7 @@ impl ClientBoundPacket for CSetEntityMetadata {
             buf.write_bytes(&entry.value);
         }
         buf.write_byte(-1); // 0xFF
-        PacketEncoder::new(buf, 0x56)
+        PacketEncoder::new(buf, play::SET_ENTITY_DATA)
     }
 }
 
@@ -1182,7 +1186,7 @@ impl ClientBoundPacket for CSetEquipment {
             buf.write_slot_data(&slot.item);
         }
 
-        PacketEncoder::new(buf, 0x59)
+        PacketEncoder::new(buf, play::SET_EQUIPMENT)
     }
 }
 
@@ -1232,7 +1236,7 @@ impl ClientBoundPacket for CUpdateScore {
         if let Some(number_format) = &self.number_format {
             number_format.write_to_buf(&mut buf);
         }
-        PacketEncoder::new(buf, 0x5F)
+        PacketEncoder::new(buf, play::SET_SCORE)
     }
 }
 
@@ -1256,7 +1260,7 @@ impl ClientBoundPacket for CUpdateObjectives {
                 number_format.write_to_buf(&mut buf);
             }
         }
-        PacketEncoder::new(buf, 0x5C)
+        PacketEncoder::new(buf, play::SET_OBJECTIVE)
     }
 }
 
@@ -1270,7 +1274,7 @@ impl ClientBoundPacket for UpdateTime {
         let mut buf = Vec::new();
         buf.write_long(self.world_age);
         buf.write_long(self.time_of_day);
-        PacketEncoder::new(buf, 0x62)
+        PacketEncoder::new(buf, play::SET_TIME)
     }
 }
 
@@ -1299,7 +1303,7 @@ impl ClientBoundPacket for CSoundEffect {
         buf.write_float(self.volume);
         buf.write_float(self.pitch);
         buf.write_long(self.seed);
-        PacketEncoder::new(buf, 0x66)
+        PacketEncoder::new(buf, play::SOUND)
     }
 }
 
@@ -1323,7 +1327,7 @@ impl ClientBoundPacket for CTeleportEntity {
         buf.write_byte(((self.yaw / 360f32 * 256f32) as i32 % 256) as i8);
         buf.write_byte(((self.pitch / 360f32 * 256f32) as i32 % 256) as i8);
         buf.write_bool(self.on_ground);
-        PacketEncoder::new(buf, 0x6D)
+        PacketEncoder::new(buf, play::TELEPORT_ENTITY)
     }
 }
 
@@ -1337,6 +1341,6 @@ impl ClientBoundPacket for CSystemChatMessage {
         let mut buf = Vec::new();
         buf.write_text_component(&self.content);
         buf.write_bool(self.overlay);
-        PacketEncoder::new(buf, 0x69)
+        PacketEncoder::new(buf, play::SYSTEM_CHAT)
     }
 }

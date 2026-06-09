@@ -15,6 +15,9 @@ struct Cli {
 }
 
 fn main() {
+    #[cfg(target_os = "macos")]
+    macos_app_nap::prevent();
+
     let cli = Cli::parse();
     if cli.version {
         println!("{}", get_version_string());

@@ -1003,9 +1003,10 @@ impl Plot {
                 Tps::Limited(tps) if tps != 0 => {
                     let dur_per_tick = Duration::from_nanos(1_000_000_000 / tps as u64);
                     self.lag_time += now - self.last_update_time;
-                    let batch_size = (self.lag_time.as_nanos() / dur_per_tick.as_nanos().max(1)) as u64;
+                    let batch_size =
+                        (self.lag_time.as_nanos() / dur_per_tick.as_nanos().max(1)) as u64;
                     self.lag_time -= dur_per_tick * batch_size as u32;
-                    batch_size.max(1).min(max_batch_size)
+                    batch_size.min(max_batch_size).max(1)
                 }
                 Tps::Unlimited => max_batch_size,
                 _ => 0,

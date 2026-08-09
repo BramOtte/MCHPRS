@@ -1,5 +1,6 @@
 use mchprs_blocks::blocks::{Block, Comparator, ComparatorMode, LeverFace, Repeater};
 use mchprs_blocks::{BlockDirection, BlockPos};
+use mchprs_redpiler::backend::UseBlockError;
 use mchprs_redpiler::{BackendVariant, Compiler, CompilerOptions};
 use mchprs_redstone::wire::make_cross;
 use mchprs_world::testing::TestWorld;
@@ -72,13 +73,20 @@ impl BackendRunner {
         }
     }
 
-    pub fn use_block(&mut self, pos: BlockPos) {
+    pub fn use_block(&mut self, pos: BlockPos) -> Result<(), UseBlockError> {
         if let Some(redpiler) = &mut self.redpiler {
-            redpiler.compiler.on_use_block(pos);
+            if let Err(e) = redpiler.compiler.on_use_block(pos) {
+                return Err(e);
+            }
             redpiler.compiler.flush(&mut self.world);
-            return;
+            return Ok(());
         }
-        mchprs_redstone::on_use(self.world.get_block(pos), &mut self.world, pos);
+        let success = mchprs_redstone::on_use(self.world.get_block(pos), &mut self.world, pos);
+        if success {
+            Ok(())
+        } else {
+            Err(UseBlockError::NotSupported)
+        }
     }
 
     pub fn check_block_powered(&self, pos: BlockPos, powered: bool) {

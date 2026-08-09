@@ -7,6 +7,7 @@ mod update;
 
 use super::JITBackend;
 use crate::backend::direct::node::ForwardLinks;
+use crate::backend::UseBlockError;
 use crate::compile_graph::CompileGraph;
 use crate::task_monitor::TaskMonitor;
 use crate::{block_powered_mut, CompilerOptions};
@@ -208,32 +209,45 @@ impl JITBackend for DirectBackend {
         self.events.clear();
     }
 
-    fn on_use_block(&mut self, pos: BlockPos) {
-        let node_id = self.pos_map[&pos];
+    fn on_use_block(&mut self, pos: BlockPos) -> Result<(), UseBlockError> {
+        let Some(&node_id) = self.pos_map.get(&pos) else {
+            return Err(UseBlockError::NotFound);
+        };
         let node = &self.nodes[node_id];
         match node.ty {
             NodeType::Button => {
                 if node.powered {
-                    return;
+                    return Ok(());
                 }
                 self.schedule_tick(node_id, 10, TickPriority::Normal);
                 self.set_node(node_id, true, 15);
+                Ok(())
             }
             NodeType::Lever => {
                 self.set_node(node_id, !node.powered, bool_to_ss(!node.powered));
+                Ok(())
             }
-            _ => warn!("Tried to use a {:?} redpiler node", node.ty),
+            _ => {
+                warn!("Tried to use a {:?} redpiler node", node.ty);
+                Err(UseBlockError::NotSupported)
+            }
         }
     }
 
-    fn set_pressure_plate(&mut self, pos: BlockPos, powered: bool) {
-        let node_id = self.pos_map[&pos];
+    fn set_pressure_plate(&mut self, pos: BlockPos, powered: bool) -> Result<(), UseBlockError> {
+        let Some(&node_id) = self.pos_map.get(&pos) else {
+            return Err(UseBlockError::NotFound);
+        };
         let node = &self.nodes[node_id];
         match node.ty {
             NodeType::PressurePlate => {
                 self.set_node(node_id, powered, bool_to_ss(powered));
+                Ok(())
             }
-            _ => warn!("Tried to set pressure plate state for a {:?}", node.ty),
+            _ => {
+                warn!("Tried to set pressure plate state for a {:?}", node.ty);
+                Err(UseBlockError::NotSupported)
+            }
         }
     }
 

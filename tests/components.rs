@@ -15,10 +15,10 @@ fn lever_on_off(backend: TestBackend) {
     let mut runner = BackendRunner::new(world, backend);
     runner.check_block_powered(lever_pos, false);
 
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_block_powered(lever_pos, true);
 
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_block_powered(lever_pos, false);
 }
 
@@ -34,10 +34,10 @@ fn trapdoor_on_off(backend: TestBackend) {
     let mut runner = BackendRunner::new(world, backend);
     runner.check_block_powered(trapdoor_pos, false);
 
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_block_powered(trapdoor_pos, true);
 
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_block_powered(trapdoor_pos, false);
 }
 
@@ -53,10 +53,10 @@ fn lamp_on_off(backend: TestBackend) {
     let mut runner = BackendRunner::new(world, backend);
     runner.check_block_powered(lamp_pos, false);
 
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_block_powered(lamp_pos, true);
 
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_powered_for(lamp_pos, true, 2);
     runner.check_block_powered(lamp_pos, false);
 }
@@ -79,11 +79,11 @@ fn wall_torch_on_off(backend: TestBackend) {
     let mut runner = BackendRunner::new(world, backend);
     runner.check_block_powered(torch_pos, true);
 
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_powered_for(torch_pos, true, 1);
     runner.check_block_powered(torch_pos, false);
 
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_powered_for(torch_pos, false, 1);
     runner.check_block_powered(torch_pos, true);
 }
@@ -101,11 +101,11 @@ fn torch_on_off(backend: TestBackend) {
     let mut runner = BackendRunner::new(world, backend);
     runner.check_block_powered(torch_pos, true);
 
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_powered_for(torch_pos, true, 1);
     runner.check_block_powered(torch_pos, false);
 
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_powered_for(torch_pos, false, 1);
     runner.check_block_powered(torch_pos, true);
 }
@@ -125,16 +125,16 @@ fn repeater_on_off(backend: TestBackend) {
         runner.check_block_powered(trapdoor_pos, false);
 
         // Check with a 1 tick pulse
-        runner.use_block(lever_pos);
+        runner.use_block(lever_pos).unwrap();
         runner.check_powered_for(trapdoor_pos, false, delay);
         runner.check_block_powered(trapdoor_pos, true);
-        runner.use_block(lever_pos);
+        runner.use_block(lever_pos).unwrap();
         runner.check_powered_for(trapdoor_pos, true, delay);
         runner.check_block_powered(trapdoor_pos, false);
 
         // Now a 0 tick pulse
-        runner.use_block(lever_pos);
-        runner.use_block(lever_pos);
+        runner.use_block(lever_pos).unwrap();
+        runner.use_block(lever_pos).unwrap();
         runner.check_powered_for(trapdoor_pos, false, delay);
         runner.check_powered_for(trapdoor_pos, true, delay);
         runner.check_block_powered(trapdoor_pos, false);
@@ -156,9 +156,9 @@ fn wire_barely_reaches(backend: TestBackend) {
 
     let mut runner = BackendRunner::new(world, backend);
     runner.check_block_powered(trapdoor_pos, false);
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_block_powered(trapdoor_pos, true);
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_block_powered(trapdoor_pos, false);
 }
 
@@ -177,9 +177,9 @@ fn wire_no_reach(backend: TestBackend) {
 
     let mut runner = BackendRunner::new(world, backend);
     runner.check_block_powered(trapdoor_pos, false);
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_block_powered(trapdoor_pos, false);
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_block_powered(trapdoor_pos, false);
 }
 

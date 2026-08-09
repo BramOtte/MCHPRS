@@ -21,6 +21,7 @@ use mchprs_blocks::{BlockFace, BlockPos};
 use mchprs_network::packets::clientbound::*;
 use mchprs_network::packets::serverbound::SUseItemOn;
 use mchprs_network::PlayerPacketSender;
+use mchprs_redpiler::backend::UseBlockError;
 use mchprs_redpiler::{Compiler, CompilerOptions};
 use mchprs_save_data::plot_data::{ChunkData, PlotData, Tps, WorldSendRate};
 use mchprs_text::TextComponent;
@@ -337,24 +338,40 @@ impl Plot {
     fn on_player_move(&mut self, player_idx: usize, old: PlayerPos, new: PlayerPos) {
         let old_block = old.block_pos();
         let new_block = new.block_pos();
-
-        if let Some(true) = self.world.get_block(old_block).get_pressure_plate_powered()
+        if old_block != new_block
+            && let Some(true) = self.world.get_block(old_block).get_pressure_plate_powered()
             && !self.are_players_on_block(old_block)
         {
-            self.set_pressure_plate(old_block, false);
+            self.set_pressure_plate(old_block, false)
+                .unwrap_or_else(|err| {
+                    self.players[player_idx].send_error_message(&format!(
+                        "{} when stepping off pressure plate at {}",
+                        err, old_block
+                    ));
+                });
         }
 
-        if let Some(false) = self.world.get_block(new_block).get_pressure_plate_powered()
+        if old_block != new_block
+            && let Some(false) = self.world.get_block(new_block).get_pressure_plate_powered()
             && self.players[player_idx].on_ground
         {
-            self.set_pressure_plate(new_block, true);
+            self.set_pressure_plate(new_block, true)
+                .unwrap_or_else(|err| {
+                    self.players[player_idx].send_error_message(&format!(
+                        "{} when stepping on pressure plate at {}",
+                        err, new_block
+                    ));
+                });
         }
     }
 
-    fn set_pressure_plate(&mut self, pos: BlockPos, new_powered: bool) {
+    fn set_pressure_plate(
+        &mut self,
+        pos: BlockPos,
+        new_powered: bool,
+    ) -> Result<(), UseBlockError> {
         if self.redpiler.is_active() {
-            self.redpiler.set_pressure_plate(pos, new_powered);
-            return;
+            return self.redpiler.set_pressure_plate(pos, new_powered);
         }
 
         let mut block = self.world.get_block(pos);
@@ -366,8 +383,10 @@ impl Plot {
                 &mut self.world,
                 pos.offset(BlockFace::Bottom),
             );
+            Result::Ok(())
         } else {
             warn!("Block at {} is not a pressure plate", pos);
+            Err(UseBlockError::NotSupported)
         }
     }
 
@@ -545,7 +564,14 @@ impl Plot {
             let block = self.world.get_block(block_pos);
             let lever_or_button = matches!(block, Block::Lever { .. } | Block::StoneButton { .. });
             if lever_or_button && !self.players[player].crouching {
-                self.redpiler.on_use_block(block_pos);
+                self.redpiler.on_use_block(block_pos).unwrap_or_else(|err| {
+                    self.players[player].send_error_message(&format!(
+                        "{} when using {} at {}",
+                        err,
+                        block.get_name(),
+                        block_pos
+                    ));
+                });
                 self.redpiler.flush(&mut self.world);
                 self.world.flush_block_changes();
                 return;

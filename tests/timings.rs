@@ -30,19 +30,19 @@ fn repeater_t_flip_flop(backend: TestBackend) {
 
     let mut runner = BackendRunner::new(world, backend);
     // Set up initial state
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_powered_for(output_pos, false, 2);
 
     // Toggle flip flop on
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_powered_for(output_pos, false, 2);
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_powered_for(output_pos, true, 10);
 
     // Toggle flip flop off
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_powered_for(output_pos, true, 2);
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_powered_for(output_pos, false, 10);
 }
 
@@ -70,7 +70,7 @@ fn pulse_gen_2t(backend: TestBackend) {
 
     let mut runner = BackendRunner::new(world, backend);
 
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_powered_for(output_pos, false, 1);
     runner.check_powered_for(output_pos, true, 2);
     runner.check_powered_for(output_pos, false, 10);
@@ -102,7 +102,7 @@ fn pulse_gen_1t(backend: TestBackend) {
 
     let mut runner = BackendRunner::new(world, backend);
 
-    runner.use_block(lever_pos);
+    runner.use_block(lever_pos).unwrap();
     runner.check_powered_for(output_pos, false, 1);
     runner.check_powered_for(output_pos, true, 1);
     runner.check_powered_for(output_pos, false, 10);

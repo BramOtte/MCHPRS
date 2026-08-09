@@ -15,7 +15,7 @@ use tracing::{debug, error, trace, warn};
 
 pub use task_monitor::TaskMonitor;
 
-use crate::{compile_graph::CompileGraph, passes::PassRegistry};
+use crate::{backend::UseBlockError, compile_graph::CompileGraph, passes::PassRegistry};
 
 fn block_powered_mut(block: &mut Block) -> Option<&mut bool> {
     Some(match block {
@@ -227,12 +227,16 @@ impl Compiler {
         self.backend().tickn(ticks);
     }
 
-    pub fn on_use_block(&mut self, pos: BlockPos) {
-        self.backend().on_use_block(pos);
+    pub fn on_use_block(&mut self, pos: BlockPos) -> Result<(), UseBlockError> {
+        self.backend().on_use_block(pos)
     }
 
-    pub fn set_pressure_plate(&mut self, pos: BlockPos, powered: bool) {
-        self.backend().set_pressure_plate(pos, powered);
+    pub fn set_pressure_plate(
+        &mut self,
+        pos: BlockPos,
+        powered: bool,
+    ) -> Result<(), UseBlockError> {
+        self.backend().set_pressure_plate(pos, powered)
     }
 
     pub fn flush<W: World>(&mut self, world: &mut W) {

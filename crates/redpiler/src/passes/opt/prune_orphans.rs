@@ -7,7 +7,9 @@ use crate::compile_graph::{CompileGraph, Direction};
 use crate::passes::{AnalysisInfos, Pass};
 use crate::{CompilerInput, CompilerOptions};
 use itertools::Itertools;
+use mchprs_blocks::BlockPos;
 use mchprs_world::World;
+use tracing::warn;
 
 pub struct PruneOrphans;
 
@@ -41,7 +43,27 @@ impl<W: World> Pass<W> for PruneOrphans {
             }
         }
 
-        graph.retain_nodes(|_, idx| visited[idx.index()]);
+        let mut useless_inputs: Vec<BlockPos> = Vec::new();
+
+        graph.retain_nodes(|g, idx| {
+            let visible = visited[idx.index()];
+            let is_input = g[idx].is_input;
+
+            if !visible && is_input {
+                useless_inputs.extend(g[idx].block.iter().map(|(pos, _)| pos));
+            }
+
+            // Retain inputs so they can be updated when used
+            visible || is_input
+        });
+
+        if useless_inputs.len() > 0 {
+            // TODO: send warning to player instead of logs
+            warn!(
+                "The following inputs are not connected to any outputs: {:#?}",
+                useless_inputs
+            );
+        }
     }
 
     fn status_message(&self) -> &'static str {
